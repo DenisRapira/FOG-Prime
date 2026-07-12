@@ -22,6 +22,7 @@ public sealed class EngineSupervisor(
         try
         {
             await integrityVerifier.VerifyAsync(cancellationToken);
+            await StopStaleEnginesAsync(cancellationToken);
 
             foreach (var profile in catalog.All)
             {
@@ -92,7 +93,23 @@ public sealed class EngineSupervisor(
 
         _engineProcess = Process.Start(startInfo) ?? throw new InvalidOperationException("Engine process could not be created.");
         _engineProcess.EnableRaisingEvents = true;
+        _engineProcess.OutputDataReceived += (_, eventArgs) =>
+        {
+            if (!string.IsNullOrWhiteSpace(eventArgs.Data))
+            {
+                logger.LogDebug("FOG Engine: {Message}", eventArgs.Data);
+            }
+        };
+        _engineProcess.ErrorDataReceived += (_, eventArgs) =>
+        {
+            if (!string.IsNullOrWhiteSpace(eventArgs.Data))
+            {
+                logger.LogWarning("FOG Engine: {Message}", eventArgs.Data);
+            }
+        };
         _engineProcess.Exited += (_, _) => logger.LogWarning("FOG Engine exited with code {ExitCode}", _engineProcess?.ExitCode);
+        _engineProcess.BeginOutputReadLine();
+        _engineProcess.BeginErrorReadLine();
         _activeProfile = profile;
         logger.LogInformation("FOG Engine started with profile {ProfileId}", profile.Id);
     }
@@ -119,6 +136,31 @@ public sealed class EngineSupervisor(
         finally
         {
             process.Dispose();
+        }
+    }
+
+    private async Task StopStaleEnginesAsync(CancellationToken cancellationToken)
+    {
+        foreach (var process in Process.GetProcessesByName("FOG.Engine"))
+        {
+            using (process)
+            {
+                if (_engineProcess is not null && process.Id == _engineProcess.Id)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    logger.LogWarning("Stopping stale FOG Engine process {ProcessId}", process.Id);
+                    process.Kill(entireProcessTree: true);
+                    await process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+                }
+                catch (InvalidOperationException)
+                {
+                    // The process exited between enumeration and cleanup.
+                }
+            }
         }
     }
 

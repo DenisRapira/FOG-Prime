@@ -11,6 +11,7 @@ internal sealed class AgentClient
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private Process? _spawnedAgent;
+    private bool _legacyAgentStopped;
 
     public async Task<AgentResponse> SendAsync(string command, CancellationToken cancellationToken)
     {
@@ -35,6 +36,12 @@ internal sealed class AgentClient
         if (await CanConnectAsync(cancellationToken))
         {
             return;
+        }
+
+        if (!_legacyAgentStopped)
+        {
+            _legacyAgentStopped = true;
+            await StopLegacyAgentAsync(cancellationToken);
         }
 
         var agentPath = Path.Combine(AppContext.BaseDirectory, "FOG.Agent.exe");
@@ -66,6 +73,23 @@ internal sealed class AgentClient
         }
 
         throw new TimeoutException("FOG Prime Agent did not become available.");
+    }
+
+    private static async Task StopLegacyAgentAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var pipe = new NamedPipeClientStream(".", AgentProtocol.LegacyPipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(250, cancellationToken);
+            await using var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
+            using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
+            await writer.WriteLineAsync(JsonSerializer.Serialize(new AgentRequest("stop"), Json));
+            await reader.ReadLineAsync(cancellationToken).AsTask().WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException)
+        {
+            // No previous agent is running, or it is already shutting down.
+        }
     }
 
     private static async Task<bool> CanConnectAsync(CancellationToken cancellationToken)

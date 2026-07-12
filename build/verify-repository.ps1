@@ -21,6 +21,15 @@ if (($ids | Select-Object -Unique).Count -ne $ids.Count) { throw "Profile IDs mu
 foreach ($profile in $profiles) {
     if ($profile.executable -ne "FOG.Engine.exe") { throw "Profile $($profile.id) uses an untrusted executable." }
     if (-not $profile.arguments -or @($profile.arguments).Count -eq 0) { throw "Profile $($profile.id) has no arguments." }
+    if (-not (@($profile.arguments) -contains "--wf-udp=443,19294-19344,50000-65535")) {
+        throw "Profile $($profile.id) does not capture the complete Discord voice UDP range."
+    }
+    if (-not (@($profile.arguments) -contains "--filter-udp=19294-19344,50000-65535")) {
+        throw "Profile $($profile.id) does not filter the complete Discord voice UDP range."
+    }
+    if (-not (@($profile.arguments) -contains "--filter-l7=discord,stun")) {
+        throw "Profile $($profile.id) is missing Discord voice protocol filtering."
+    }
     $joined = $profile.arguments -join " "
     if ($joined -match '(?i)(cmd\.exe|powershell|\.bat\b|service\.bat|winws\.exe)') {
         throw "Profile $($profile.id) contains a forbidden legacy or shell reference."

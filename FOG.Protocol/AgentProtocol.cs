@@ -2,8 +2,9 @@ namespace FOG.Protocol;
 
 public static class AgentProtocol
 {
-    public const string PipeName = "fog-prime-agent-v1";
-    public const int Version = 1;
+    public const string PipeName = "fog-prime-agent-v2";
+    public const string LegacyPipeName = "fog-prime-agent-v1";
+    public const int Version = 2;
 }
 
 public sealed record AgentRequest(string Command, string? CorrelationId = null);
