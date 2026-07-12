@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FOG.Protocol", "FOG.Protocol\FOG.Protocol.csproj", "{0279902C-81E5-4A63-A8D0-221E64E8176B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FOG.Agent", "FOG.Agent\FOG.Agent.csproj", "{56B447C4-6755-49E6-9CEB-94C3DA4B20A2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FOG.WebView2", "FOG.WebView2\FOG.WebView2.csproj", "{DD64EBB4-167B-460F-9E31-5109E7CB6E14}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{0279902C-81E5-4A63-A8D0-221E64E8176B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0279902C-81E5-4A63-A8D0-221E64E8176B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0279902C-81E5-4A63-A8D0-221E64E8176B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0279902C-81E5-4A63-A8D0-221E64E8176B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{56B447C4-6755-49E6-9CEB-94C3DA4B20A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{56B447C4-6755-49E6-9CEB-94C3DA4B20A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{56B447C4-6755-49E6-9CEB-94C3DA4B20A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{56B447C4-6755-49E6-9CEB-94C3DA4B20A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DD64EBB4-167B-460F-9E31-5109E7CB6E14}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DD64EBB4-167B-460F-9E31-5109E7CB6E14}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DD64EBB4-167B-460F-9E31-5109E7CB6E14}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DD64EBB4-167B-460F-9E31-5109E7CB6E14}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

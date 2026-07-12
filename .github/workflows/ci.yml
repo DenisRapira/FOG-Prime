@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dotnet:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Restore
+        run: dotnet restore FOG.Prime.sln --locked-mode
+      - name: Build
+        run: dotnet build FOG.Prime.sln -c Release --no-restore
+      - name: Verify repository
+        shell: powershell
+        run: ./build/verify-repository.ps1 -SkipBuild
+
+  scripts:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse PowerShell scripts
+        shell: powershell
+        run: |
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            [scriptblock]::Create((Get-Content -Raw $_.FullName)) | Out-Null
+          }

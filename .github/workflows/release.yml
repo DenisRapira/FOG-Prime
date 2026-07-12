@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - uses: cygwin/cygwin-install-action@v4
+        with:
+          platform: x86_64
+          site: http://ctm.crouchingtigerhiddenfruitbat.org/pub/cygwin/circa/64bit/2024/01/30/231215
+          check-sig: false
+          packages: gcc-core make zlib-devel
+
+      - name: Resolve version
+        id: version
+        shell: powershell
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "0.0.0-$($env:GITHUB_SHA.Substring(0, 8))" }
+          "value=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build FOG Engine from source
+        shell: powershell
+        run: ./FOG.Engine/build/windows/build-engine.ps1 -CygwinRoot C:\cygwin -OutputDirectory ./FOG.Engine/artifacts/win-x64
+      - name: Prepare trusted runtime
+        shell: powershell
+        run: ./FOG.Engine/build/windows/prepare-runtime.ps1 -CygwinRoot C:\cygwin -OutputDirectory ./FOG.Engine/artifacts/win-x64
+      - name: Package application
+        shell: powershell
+        run: ./build/package.ps1 -EngineRuntime ./FOG.Engine/artifacts/win-x64 -OutputDirectory ./release/FOG-Prime -Version '${{ steps.version.outputs.value }}'
+      - name: Verify package
+        shell: powershell
+        run: ./build/verify-repository.ps1 -PackageDirectory ./release/FOG-Prime
+      - name: Create ZIP
+        shell: powershell
+        run: |
+          $archive = "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.zip"
+          Compress-Archive -Path ./release/FOG-Prime/* -DestinationPath $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($archive))" | Set-Content "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256" -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FOG-Prime-${{ steps.version.outputs.value }}-win-x64
+          path: |
+            ./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.zip
+            ./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256
+          if-no-files-found: error
+      - name: Publish GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: powershell
+        run: gh release create "$env:GITHUB_REF_NAME" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.zip" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256" --verify-tag --generate-notes --title "FOG Prime $env:GITHUB_REF_NAME"

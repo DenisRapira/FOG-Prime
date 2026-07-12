@@ -1,0 +1,15 @@
+**/bin/
+**/obj/
+release/
+FOG.Engine/artifacts/
+.tools/
+.vs/
+.idea/
+TestResults/
+*.user
+*.suo
+*.log
+*.tmp
+*.pfx
+*.snk
+.DS_Store

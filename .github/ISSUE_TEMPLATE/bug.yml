@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible FOG Prime problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: checkboxes
+    attributes:
+      label: Safety checks
+      options:
+        - label: I downloaded FOG Prime from this repository's Releases page.
+          required: true
+        - label: I removed tokens, private domains, IPs, and personal data from logs.
+          required: true
+  - type: input
+    attributes:
+      label: Version
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Windows version
+      options: [Windows 10 x64, Windows 11 x64, Windows Server, Other]
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true

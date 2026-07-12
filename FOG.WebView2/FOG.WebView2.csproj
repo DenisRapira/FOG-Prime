@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>FOG Prime</AssemblyName>
+    <AllowedReferenceRelatedFileExtensions></AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="wwwroot\index.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FOG.Protocol\FOG.Protocol.csproj" />
+  </ItemGroup>
+
+  <Target Name="RemovePublishDocumentation" AfterTargets="Publish">
+    <ItemGroup>
+      <PublishDocumentation Include="$(PublishDir)*.xml" />
+    </ItemGroup>
+    <Delete Files="@(PublishDocumentation)" />
+  </Target>
+
+</Project>
