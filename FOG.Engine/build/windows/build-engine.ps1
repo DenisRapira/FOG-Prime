@@ -13,6 +13,7 @@ if (-not (Test-Path $bash)) { throw "Cygwin bash was not found: $bash" }
 if (-not (Test-Path $source)) { throw "Pinned upstream source was not found: $source" }
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
+$OutputDirectory = (Resolve-Path $OutputDirectory).Path
 $cygSource = & $bash -lc "cygpath -u '$source'"
 $cygOutput = & $bash -lc "cygpath -u '$OutputDirectory'"
 
