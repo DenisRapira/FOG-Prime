@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - uses: cygwin/cygwin-install-action@v4
+      - uses: cygwin/cygwin-install-action@v6
         with:
           platform: x86_64
           site: http://ctm.crouchingtigerhiddenfruitbat.org/pub/cygwin/circa/64bit/2024/01/30/231215
