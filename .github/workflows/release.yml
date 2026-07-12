@@ -49,7 +49,7 @@ jobs:
           Compress-Archive -Path ./release/FOG-Prime/* -DestinationPath $archive
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($archive))" | Set-Content "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256" -Encoding ascii
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: FOG-Prime-${{ steps.version.outputs.value }}-win-x64
           path: |
