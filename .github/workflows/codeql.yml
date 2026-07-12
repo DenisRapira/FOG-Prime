@@ -19,8 +19,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: csharp
       - run: dotnet build FOG.Prime.sln -c Release
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
