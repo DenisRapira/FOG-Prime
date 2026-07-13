@@ -15,31 +15,15 @@ public sealed class EngineSupervisor(
     private Process? _engineProcess;
     private EngineProfile? _activeProfile;
     private IReadOnlyList<ProbeResult> _lastProbes = Array.Empty<ProbeResult>();
+    private volatile bool _desiredRunning;
 
     public async Task<AgentSnapshot> StartBestAsync(CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            await integrityVerifier.VerifyAsync(cancellationToken);
-            await StopStaleEnginesAsync(cancellationToken);
-
-            foreach (var profile in catalog.All)
-            {
-                await StopInternalAsync(cancellationToken);
-                StartProfile(profile);
-                await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
-                _lastProbes = await healthChecker.CheckAsync(cancellationToken);
-
-                if (_engineProcess is { HasExited: false } && _lastProbes.All(probe => probe.Ok))
-                {
-                    _activeProfile = profile;
-                    return CreateSnapshot("ready");
-                }
-            }
-
-            await StopInternalAsync(cancellationToken);
-            return CreateSnapshot("degraded");
+            _desiredRunning = true;
+            return await StartBestInternalAsync(cancellationToken);
         }
         finally
         {
@@ -52,6 +36,7 @@ public sealed class EngineSupervisor(
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            _desiredRunning = false;
             await StopInternalAsync(cancellationToken);
             return CreateSnapshot("stopped");
         }
@@ -65,6 +50,48 @@ public sealed class EngineSupervisor(
     {
         _lastProbes = await healthChecker.CheckAsync(cancellationToken);
         return CreateSnapshot(IsRunning && _lastProbes.All(probe => probe.Ok) ? "ready" : IsRunning ? "degraded" : "stopped");
+    }
+
+    public async Task<AgentSnapshot> RecoverIfNeededAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_desiredRunning && !IsRunning)
+            {
+                logger.LogWarning("FOG Engine is not running; starting automatic recovery");
+                return await StartBestInternalAsync(cancellationToken);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        return await RefreshHealthAsync(cancellationToken);
+    }
+
+    private async Task<AgentSnapshot> StartBestInternalAsync(CancellationToken cancellationToken)
+    {
+        await integrityVerifier.VerifyAsync(cancellationToken);
+        await StopStaleEnginesAsync(cancellationToken);
+
+        foreach (var profile in catalog.All)
+        {
+            await StopInternalAsync(cancellationToken);
+            StartProfile(profile);
+            await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+            _lastProbes = await healthChecker.CheckAsync(cancellationToken);
+
+            if (_engineProcess is { HasExited: false } && _lastProbes.All(probe => probe.Ok))
+            {
+                _activeProfile = profile;
+                return CreateSnapshot("ready");
+            }
+        }
+
+        await StopInternalAsync(cancellationToken);
+        return CreateSnapshot("degraded");
     }
 
     private void StartProfile(EngineProfile profile)

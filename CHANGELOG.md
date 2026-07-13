@@ -13,6 +13,17 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Minimal WebView2 user interface.
 - Reproducible GitHub Actions build and release workflows.
 
+## [0.1.4] - 2026-07-13
+
+- Extended Discord voice priming through the first RTP packets to prevent the
+  media flow from degrading from normal latency to 5000 ms after connection.
+- Switched Discord, STUN, and unknown-UDP voice decoys to the current Google
+  QUIC pattern with six repeats and a four-packet cutoff.
+- Prevented SSRC synchronization from corrupting non-Discord QUIC decoys.
+- Added automatic Engine recovery after an unexpected process exit.
+- Clarified that closing the window stops FOG and should only be done after the
+  Discord session is finished.
+
 ## [0.1.3] - 2026-07-13
 
 - Replaced the valid Discord discovery fake with server-ignored STUN and QUIC

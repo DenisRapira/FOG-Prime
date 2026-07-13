@@ -15,7 +15,7 @@ public sealed class Worker(
         {
             try
             {
-                var snapshot = await supervisor.RefreshHealthAsync(stoppingToken);
+                var snapshot = await supervisor.RecoverIfNeededAsync(stoppingToken);
                 await stateStore.SaveAsync(snapshot, stoppingToken);
             }
             catch (Exception ex)

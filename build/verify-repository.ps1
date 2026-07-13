@@ -16,7 +16,7 @@ $profiles = Get-Content $profilesPath -Raw | ConvertFrom-Json
 if (-not $profiles -or @($profiles).Count -lt 2) { throw "At least two automatic profiles are required." }
 
 $engineSource = Get-Content (Join-Path $root "FOG.Engine\upstream\nfq\desync.c") -Raw
-if ($engineSource -notmatch 'memcpy\(discord_fake \+ 4, dis->data_payload \+ 4, 4\)') {
+if ($engineSource -notmatch '(?s)IsDiscordIpDiscoveryRequest\(fake_data, fake_size\).*memcpy\(discord_fake \+ 4, dis->data_payload \+ 4, 4\)') {
     throw "FOG Engine is missing Discord Voice SSRC synchronization."
 }
 
@@ -35,13 +35,15 @@ foreach ($profile in $profiles) {
     if (-not (@($profile.arguments) -contains "--filter-l7=discord,stun")) {
         throw "Profile $($profile.id) is missing Discord voice protocol filtering."
     }
-    if (-not (@($profile.arguments) -contains "--dpi-desync-cutoff=n2")) {
-        throw "Profile $($profile.id) does not limit Discord discovery desync to the first UDP packet."
+    if (-not (@($profile.arguments) -contains "--dpi-desync-any-protocol=1") -or
+        -not (@($profile.arguments) -contains "--dpi-desync-cutoff=n4")) {
+        throw "Profile $($profile.id) does not prime the start of Discord RTP media."
     }
-    if ((@($profile.arguments) | Where-Object { $_ -eq '--dpi-desync-fake-discord=${runtime}\stun.bin' }).Count -ne 1 -or
-        (@($profile.arguments) | Where-Object { $_ -eq '--dpi-desync-fake-discord=${runtime}\voice_decoy_quic.bin' }).Count -ne 1 -or
-        -not (@($profile.arguments) -contains '--dpi-desync-fake-stun=${runtime}\voice_decoy_quic.bin')) {
-        throw "Profile $($profile.id) is missing the server-safe Discord voice decoys."
+    $voiceDecoy = '${runtime}\quic_initial_www_google_com.bin'
+    if (-not (@($profile.arguments) -contains "--dpi-desync-fake-discord=$voiceDecoy") -or
+        -not (@($profile.arguments) -contains "--dpi-desync-fake-stun=$voiceDecoy") -or
+        -not (@($profile.arguments) -contains "--dpi-desync-fake-unknown-udp=$voiceDecoy")) {
+        throw "Profile $($profile.id) is missing the Discord voice QUIC prime."
     }
     $joined = $profile.arguments -join " "
     if ($joined -match '(?i)(cmd\.exe|powershell|\.bat\b|service\.bat|winws\.exe)') {
@@ -50,8 +52,10 @@ foreach ($profile in $profiles) {
 }
 
 $pipeServerSource = Get-Content (Join-Path $root "FOG.Agent\AgentPipeServer.cs") -Raw
+$supervisorSource = Get-Content (Join-Path $root "FOG.Agent\EngineSupervisor.cs") -Raw
 $windowSource = Get-Content (Join-Path $root "FOG.WebView2\MainWindow.xaml.cs") -Raw
 if ($pipeServerSource -notmatch '"shutdown"\s*=>') { throw "Agent shutdown command is missing." }
+if ($supervisorSource -notmatch 'RecoverIfNeededAsync') { throw "Automatic Engine recovery is missing." }
 if ($windowSource -notmatch 'Closing\s*\+=\s*OnClosing') { throw "Window close cleanup is missing." }
 
 $applicationSources = Get-ChildItem (Join-Path $root "FOG.Agent"), (Join-Path $root "FOG.Protocol"), (Join-Path $root "FOG.WebView2") -Recurse -File |
@@ -72,7 +76,6 @@ if ($PackageDirectory) {
         "runtime\FOG.Engine.exe",
         "runtime\WinDivert.dll",
         "runtime\WinDivert64.sys",
-        "runtime\voice_decoy_quic.bin",
         "THIRD_PARTY_NOTICES.md",
         "UPSTREAM.md"
     )

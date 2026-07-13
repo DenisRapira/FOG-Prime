@@ -138,7 +138,7 @@ public partial class MainWindow : Window
         await PostAsync("prime", new PrimePayload(
             ready ? "ready" : "needsAttention",
             ready ? "Все готово" : "Нужна помощь",
-            ready ? "Discord доступен. Можно закрыть это окно." : "Не удалось подтвердить соединение. Попробуйте еще раз.",
+            ready ? "FOG работает. Оставьте окно открытым, пока используете Discord." : "Не удалось подтвердить соединение. Попробуйте еще раз.",
             100,
             diagnostics,
             checks));
