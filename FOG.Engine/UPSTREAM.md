@@ -15,3 +15,6 @@ The copied upstream source is retained in `upstream/` for reproducible builds. P
 - Synchronize the SSRC in generated Discord Voice IP Discovery packets with the
   current client request. This prevents a server response to a static fake SSRC
   from being rejected by Discord as `NO_ROUTE`.
+- Package a server-ignored QUIC decoy for Discord Voice discovery desync. It is
+  paired with the upstream STUN sample so fake traffic cannot be accepted as a
+  real Discord discovery response.

@@ -18,6 +18,7 @@ Copy-Item $cygwin $output -Force
 Copy-Item (Join-Path $fake "quic_initial_www_google_com.bin") $output -Force
 Copy-Item (Join-Path $fake "discord-ip-discovery-with-port.bin") $output -Force
 Copy-Item (Join-Path $fake "stun.bin") $output -Force
+Copy-Item (Join-Path $fake "voice_decoy_quic.bin") $output -Force
 Copy-Item (Join-Path $fake "tls_clienthello_www_google_com.bin") $output -Force
 
 $temporary = Join-Path $env:TEMP ("fog-windivert-" + [guid]::NewGuid().ToString("N"))

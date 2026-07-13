@@ -13,6 +13,16 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Minimal WebView2 user interface.
 - Reproducible GitHub Actions build and release workflows.
 
+## [0.1.3] - 2026-07-13
+
+- Replaced the valid Discord discovery fake with server-ignored STUN and QUIC
+  decoys, preventing a false-positive voice connection with silent media.
+- Limited Discord voice desynchronization to the initial discovery packet and
+  aligned its repeat count with the verified ALT12 strategy.
+- Closing the FOG Prime window now stops the Engine, shuts down the Agent, and
+  cleans up stale FOG background processes.
+- Added repository checks for voice decoy packaging and close-time cleanup.
+
 ## [0.1.1] - 2026-07-12
 
 - Fixed Discord Voice `No Route` failures by covering the complete media UDP port range.

@@ -5,7 +5,10 @@ using System.Text.Json;
 
 namespace FOG.Agent;
 
-public sealed class AgentPipeServer(EngineSupervisor supervisor, ILogger<AgentPipeServer> logger)
+public sealed class AgentPipeServer(
+    EngineSupervisor supervisor,
+    IHostApplicationLifetime applicationLifetime,
+    ILogger<AgentPipeServer> logger)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -48,6 +51,11 @@ public sealed class AgentPipeServer(EngineSupervisor supervisor, ILogger<AgentPi
             : await DispatchAsync(request, cancellationToken);
 
         await writer.WriteLineAsync(JsonSerializer.Serialize(response, Json));
+
+        if (response.Ok && string.Equals(request?.Command, "shutdown", StringComparison.OrdinalIgnoreCase))
+        {
+            applicationLifetime.StopApplication();
+        }
     }
 
     private async Task<AgentResponse> DispatchAsync(AgentRequest request, CancellationToken cancellationToken)
@@ -59,6 +67,7 @@ public sealed class AgentPipeServer(EngineSupervisor supervisor, ILogger<AgentPi
                 "status" => Success("ready", "Status updated.", request, await supervisor.RefreshHealthAsync(cancellationToken)),
                 "start" => Success("ready", "Automatic connection completed.", request, await supervisor.StartBestAsync(cancellationToken)),
                 "stop" => Success("stopped", "Engine stopped.", request, await supervisor.StopAsync(cancellationToken)),
+                "shutdown" => Success("stopped", "Agent stopped.", request, await supervisor.StopAsync(cancellationToken)),
                 "recheck" => Success("ready", "Connection checked.", request, await supervisor.RefreshHealthAsync(cancellationToken)),
                 _ => new AgentResponse(false, "invalid", "Unsupported command.", request.CorrelationId)
             };

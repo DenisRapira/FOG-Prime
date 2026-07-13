@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows;
+using System.ComponentModel;
 
 namespace FOG.WebView2;
 
@@ -18,11 +19,46 @@ public partial class MainWindow : Window
 
     private readonly AgentClient _agentClient = new();
     private bool _primeStarted;
+    private bool _shutdownComplete;
+    private bool _shutdownInProgress;
 
     public MainWindow()
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        Closing += OnClosing;
+    }
+
+    private async void OnClosing(object? sender, CancelEventArgs e)
+    {
+        if (_shutdownComplete)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        if (_shutdownInProgress)
+        {
+            return;
+        }
+
+        _shutdownInProgress = true;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(6));
+        try
+        {
+            await _agentClient.ShutdownAsync(timeout.Token);
+        }
+        finally
+        {
+            if (Browser.CoreWebView2 is not null)
+            {
+                Browser.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+            }
+
+            Browser.Dispose();
+            _shutdownComplete = true;
+            Close();
+        }
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)

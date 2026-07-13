@@ -1,4 +1,5 @@
 using FOG.Protocol;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
@@ -29,6 +30,35 @@ internal sealed class AgentClient
             ? new AgentResponse(false, "degraded", "Agent did not return a response.", request.CorrelationId)
             : JsonSerializer.Deserialize<AgentResponse>(response, Json)
                 ?? new AgentResponse(false, "degraded", "Agent returned invalid data.", request.CorrelationId);
+    }
+
+    public async Task ShutdownAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SendConnectedAsync("shutdown", cancellationToken);
+        }
+        catch (Exception)
+        {
+            // The fallback below also covers an unresponsive local agent.
+        }
+
+        if (_spawnedAgent is { HasExited: false } spawned)
+        {
+            try
+            {
+                await spawned.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
+            }
+            catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
+            {
+                TryTerminate(spawned);
+            }
+        }
+
+        TerminateByName("FOG.Engine");
+        TerminateByName("FOG.Agent");
+        _spawnedAgent?.Dispose();
+        _spawnedAgent = null;
     }
 
     private async Task EnsureAvailableAsync(CancellationToken cancellationToken)
@@ -103,6 +133,48 @@ internal sealed class AgentClient
         catch
         {
             return false;
+        }
+    }
+
+    private static async Task<AgentResponse> SendConnectedAsync(string command, CancellationToken cancellationToken)
+    {
+        await using var pipe = new NamedPipeClientStream(".", AgentProtocol.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await pipe.ConnectAsync(1000, cancellationToken);
+        await using var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
+        using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
+        var request = new AgentRequest(command, Guid.NewGuid().ToString("N"));
+        await writer.WriteLineAsync(JsonSerializer.Serialize(request, Json));
+        var line = await reader.ReadLineAsync(cancellationToken).AsTask().WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
+        return line is null
+            ? new AgentResponse(false, "degraded", "Agent did not return a response.", request.CorrelationId)
+            : JsonSerializer.Deserialize<AgentResponse>(line, Json)
+                ?? new AgentResponse(false, "degraded", "Agent returned invalid data.", request.CorrelationId);
+    }
+
+    private static void TerminateByName(string processName)
+    {
+        foreach (var process in Process.GetProcessesByName(processName))
+        {
+            using (process)
+            {
+                TryTerminate(process);
+            }
+        }
+    }
+
+    private static void TryTerminate(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                process.WaitForExit(3000);
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or NotSupportedException)
+        {
+            // The process exited between enumeration and cleanup.
         }
     }
 }
