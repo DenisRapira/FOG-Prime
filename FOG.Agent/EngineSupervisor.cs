@@ -91,6 +91,11 @@ public sealed class EngineSupervisor(
         }
 
         await StopInternalAsync(cancellationToken);
+        var fallback = catalog.All[0];
+        StartProfile(fallback);
+        await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+        _lastProbes = await healthChecker.CheckAsync(cancellationToken);
+        _activeProfile = fallback;
         return CreateSnapshot("degraded");
     }
 

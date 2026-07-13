@@ -15,7 +15,8 @@ public sealed class ConnectionHealthChecker
             CheckDnsAsync(cancellationToken),
             CheckTcpAsync("gateway.discord.gg", 443, cancellationToken),
             CheckHttpAsync("https://discord.com/api/v10/gateway", cancellationToken),
-            CheckHttpAsync("https://cdn.discordapp.com", cancellationToken, acceptAnyHttpStatus: true)
+            CheckHttpAsync("https://cdn.discordapp.com", cancellationToken, acceptAnyHttpStatus: true),
+            CheckHttpAsync("https://www.youtube.com/generate_204", cancellationToken)
         };
         return await Task.WhenAll(checks);
     }

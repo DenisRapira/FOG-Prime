@@ -35,6 +35,12 @@ foreach ($profile in $profiles) {
     if (-not (@($profile.arguments) -contains "--filter-l7=discord,stun")) {
         throw "Profile $($profile.id) is missing Discord voice protocol filtering."
     }
+    $youtubeDomains = '--hostlist-domains=youtube.com,youtu.be,googlevideo.com,ytimg.com,youtubei.googleapis.com,ggpht.com'
+    if (-not (@($profile.arguments) -contains $youtubeDomains) -or
+        -not (@($profile.arguments) -contains '--dpi-desync=hostfakesplit') -or
+        -not (@($profile.arguments) -contains '--dpi-desync-hostfakesplit-mod=host=www.google.com')) {
+        throw "Profile $($profile.id) is missing the YouTube TLS strategy."
+    }
     $voiceDecoy = '${runtime}\voice_decoy_quic.bin'
     $discordFakes = @($profile.arguments | Where-Object { $_ -like '--dpi-desync-fake-discord=*' })
     if ($discordFakes.Count -ne 2 -or
@@ -52,9 +58,12 @@ foreach ($profile in $profiles) {
 
 $pipeServerSource = Get-Content (Join-Path $root "FOG.Agent\AgentPipeServer.cs") -Raw
 $supervisorSource = Get-Content (Join-Path $root "FOG.Agent\EngineSupervisor.cs") -Raw
+$healthSource = Get-Content (Join-Path $root "FOG.Agent\ConnectionHealthChecker.cs") -Raw
 $windowSource = Get-Content (Join-Path $root "FOG.WebView2\MainWindow.xaml.cs") -Raw
 if ($pipeServerSource -notmatch '"shutdown"\s*=>') { throw "Agent shutdown command is missing." }
 if ($supervisorSource -notmatch 'RecoverIfNeededAsync') { throw "Automatic Engine recovery is missing." }
+if ($supervisorSource -notmatch 'var fallback = catalog\.All\[0\]') { throw "Degraded profile fallback is missing." }
+if ($healthSource -notmatch 'youtube\.com/generate_204') { throw "YouTube health probe is missing." }
 if ($windowSource -notmatch 'Closing\s*\+=\s*OnClosing') { throw "Window close cleanup is missing." }
 
 $applicationSources = Get-ChildItem (Join-Path $root "FOG.Agent"), (Join-Path $root "FOG.Protocol"), (Join-Path $root "FOG.WebView2") -Recurse -File |

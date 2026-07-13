@@ -6,6 +6,12 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ### Added
 
+- Automatic YouTube TLS and QUIC handling with a live connectivity probe.
+- A degraded-mode fallback that keeps the proven Discord profile running when
+  an additional service probe is unavailable.
+
+### Foundation
+
 - Source-built FOG Engine runtime.
 - Local FOG Agent with restricted named-pipe protocol.
 - Automatic Discord profile selection and health checks.
