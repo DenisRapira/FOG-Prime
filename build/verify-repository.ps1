@@ -15,6 +15,11 @@ $profilesPath = Join-Path $root "FOG.Agent\profiles.json"
 $profiles = Get-Content $profilesPath -Raw | ConvertFrom-Json
 if (-not $profiles -or @($profiles).Count -lt 2) { throw "At least two automatic profiles are required." }
 
+$engineSource = Get-Content (Join-Path $root "FOG.Engine\upstream\nfq\desync.c") -Raw
+if ($engineSource -notmatch 'memcpy\(discord_fake \+ 4, dis->data_payload \+ 4, 4\)') {
+    throw "FOG Engine is missing Discord Voice SSRC synchronization."
+}
+
 $ids = @($profiles | ForEach-Object id)
 if (($ids | Select-Object -Unique).Count -ne $ids.Count) { throw "Profile IDs must be unique." }
 

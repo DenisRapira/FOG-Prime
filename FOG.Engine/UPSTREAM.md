@@ -9,3 +9,9 @@ FOG Engine is built from the `nfq/winws` Windows target in the upstream source t
 | WinDivert | 2.2.2 | LGPL-3.0-or-later or GPL-2.0-only |
 
 The copied upstream source is retained in `upstream/` for reproducible builds. Product code must retain the upstream notices and must not claim authorship of the third-party engine or driver.
+
+## FOG patch set
+
+- Synchronize the SSRC in generated Discord Voice IP Discovery packets with the
+  current client request. This prevents a server response to a static fake SSRC
+  from being rejected by Discord as `NO_ROUTE`.

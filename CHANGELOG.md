@@ -21,6 +21,12 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Prevented FOG Engine output buffers from blocking long-running sessions.
 - Added regression checks for Discord voice profile coverage.
 
+## [0.1.2] - 2026-07-13
+
+- Fixed Discord Voice `NO_ROUTE` caused by a static SSRC in generated discovery packets.
+- Confirmed DNS resolution against Google Public DNS without forcing system DNS changes.
+- Added a repository check that requires dynamic Discord SSRC synchronization in FOG Engine.
+
 ## [0.1.0] - 2026-07-12
 
 - Initial public-ready build.

@@ -3249,10 +3249,24 @@ static uint8_t dpi_desync_udp_packet_play(bool replay, size_t reasm_offset, uint
 
 				LIST_FOREACH(fake_item, fake, next)
 				{
+					uint8_t discord_fake[FAKE_MAX_UDP];
 					n++;
 
 					fake_data = fake_item->data + fake_item->offset;
 					fake_size = fake_item->size - fake_item->offset;
+
+					/*
+					 * Discord validates the SSRC echoed by Voice IP Discovery.
+					 * A static fake SSRC can reach the server and make the real
+					 * client reject the response as NO_ROUTE. Preserve the fake
+					 * shape while binding it to the current discovery request.
+					 */
+					if (l7proto == DISCORD && fake_size >= 8 && fake_size <= sizeof(discord_fake) && dis->len_payload >= 8)
+					{
+						memcpy(discord_fake, fake_data, fake_size);
+						memcpy(discord_fake + 4, dis->data_payload + 4, 4);
+						fake_data = discord_fake;
+					}
 
 					pkt1_len = sizeof(pkt1);
 					if (!prepare_udp_segment((struct sockaddr *)&src, (struct sockaddr *)&dst,
