@@ -367,11 +367,11 @@
           <div class="stage-state">WAIT</div>
         </article>
 
-        <article id="stageDiscord" class="stage">
+        <article id="stageAccess" class="stage">
           <div class="stage-index">03</div>
           <div class="stage-copy">
-            <div class="stage-title">Discord</div>
-            <div class="stage-note">Проверка связи</div>
+            <div class="stage-title">Доступ</div>
+            <div class="stage-note">Финальная проверка</div>
           </div>
           <div class="stage-state">WAIT</div>
         </article>
@@ -393,7 +393,7 @@
   </div>
 
   <script>
-    const stageIds = ["stageSystem", "stageEngine", "stageDiscord"];
+    const stageIds = ["stageSystem", "stageEngine", "stageAccess"];
     const actionButton = document.getElementById("actionButton");
     let currentStatus = "checking";
 
@@ -428,13 +428,13 @@
         setStage(0, "done");
         setStage(1, "done");
         setStage(2, "active");
-        document.getElementById("resultValue").textContent = "Проверяем Discord";
+        document.getElementById("resultValue").textContent = "Проверяем доступ";
       } else if (payload.status === "ready") {
         setStage(0, "done");
         setStage(1, "done");
         setStage(2, "done");
         document.getElementById("kicker").textContent = "Connection verified";
-        document.getElementById("resultValue").textContent = "Discord доступен";
+        document.getElementById("resultValue").textContent = "Соединение готово";
         actionButton.textContent = "Закрыть";
         actionButton.hidden = false;
       } else {

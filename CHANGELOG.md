@@ -4,12 +4,6 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
-### Added
-
-- Automatic YouTube TLS and QUIC handling with a live connectivity probe.
-- A degraded-mode fallback that keeps the proven Discord profile running when
-  an additional service probe is unavailable.
-
 ### Foundation
 
 - Source-built FOG Engine runtime.
@@ -18,6 +12,13 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Runtime SHA-256 verification.
 - Minimal WebView2 user interface.
 - Reproducible GitHub Actions build and release workflows.
+
+## [0.1.6] - 2026-07-13
+
+- Added automatic YouTube TLS and QUIC handling with a live connectivity probe.
+- Added a degraded-mode fallback that keeps the proven Discord profile running
+  when the YouTube probe is unavailable.
+- Generalized the minimal UI wording for Discord and YouTube connectivity.
 
 ## [0.1.5] - 2026-07-13
 

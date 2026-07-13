@@ -4,12 +4,13 @@
 [![Release](https://img.shields.io/github/v/release/DenisRapira/FOG-Prime?display_name=tag)](https://github.com/DenisRapira/FOG-Prime/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-black.svg)](LICENSE)
 
-FOG Prime — локальное Windows-приложение для автоматической настройки и проверки соединения Discord. Пользователь видит три этапа: проверка системы, автоматический выбор сетевого профиля и проверка Discord.
+FOG Prime — локальное Windows-приложение для автоматической настройки и проверки соединения Discord и YouTube. Пользователь видит только три общих этапа: проверка системы, автоматическая настройка и проверка доступа.
 
 ## Возможности
 
-- автоматический выбор из нескольких ограниченных Discord-профилей;
-- проверки DNS, Gateway, Discord API и CDN;
+- автоматический выбор из нескольких ограниченных сетевых профилей;
+- рабочая голосовая связь Discord и доступ к YouTube через TLS/QUIC;
+- проверки DNS, Discord Gateway/API/CDN и YouTube;
 - собственный Windows Agent с автозапуском и восстановлением после сбоя;
 - локальный IPC без передачи произвольных команд и путей;
 - проверка SHA-256 каждого runtime-файла перед запуском;
