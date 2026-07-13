@@ -26,24 +26,23 @@ if (($ids | Select-Object -Unique).Count -ne $ids.Count) { throw "Profile IDs mu
 foreach ($profile in $profiles) {
     if ($profile.executable -ne "FOG.Engine.exe") { throw "Profile $($profile.id) uses an untrusted executable." }
     if (-not $profile.arguments -or @($profile.arguments).Count -eq 0) { throw "Profile $($profile.id) has no arguments." }
-    if (-not (@($profile.arguments) -contains "--wf-udp=443,19294-19344,50000-65535")) {
-        throw "Profile $($profile.id) does not capture the complete Discord voice UDP range."
+    if (-not (@($profile.arguments) -contains "--wf-udp=443,19294-19344,50000-50100")) {
+        throw "Profile $($profile.id) does not use the validated Discord voice UDP range."
     }
-    if (-not (@($profile.arguments) -contains "--filter-udp=19294-19344,50000-65535")) {
-        throw "Profile $($profile.id) does not filter the complete Discord voice UDP range."
+    if (-not (@($profile.arguments) -contains "--filter-udp=19294-19344,50000-50100")) {
+        throw "Profile $($profile.id) does not filter the validated Discord voice UDP range."
     }
     if (-not (@($profile.arguments) -contains "--filter-l7=discord,stun")) {
         throw "Profile $($profile.id) is missing Discord voice protocol filtering."
     }
-    if (-not (@($profile.arguments) -contains "--dpi-desync-any-protocol=1") -or
-        -not (@($profile.arguments) -contains "--dpi-desync-cutoff=n4")) {
-        throw "Profile $($profile.id) does not prime the start of Discord RTP media."
-    }
-    $voiceDecoy = '${runtime}\quic_initial_www_google_com.bin'
-    if (-not (@($profile.arguments) -contains "--dpi-desync-fake-discord=$voiceDecoy") -or
+    $voiceDecoy = '${runtime}\voice_decoy_quic.bin'
+    $discordFakes = @($profile.arguments | Where-Object { $_ -like '--dpi-desync-fake-discord=*' })
+    if ($discordFakes.Count -ne 2 -or
+        $discordFakes[0] -ne '--dpi-desync-fake-discord=${runtime}\stun.bin' -or
+        $discordFakes[1] -ne "--dpi-desync-fake-discord=$voiceDecoy" -or
         -not (@($profile.arguments) -contains "--dpi-desync-fake-stun=$voiceDecoy") -or
-        -not (@($profile.arguments) -contains "--dpi-desync-fake-unknown-udp=$voiceDecoy")) {
-        throw "Profile $($profile.id) is missing the Discord voice QUIC prime."
+        -not (@($profile.arguments) -contains '--dpi-desync-repeats=3')) {
+        throw "Profile $($profile.id) is missing the validated ordered voice handshake."
     }
     $joined = $profile.arguments -join " "
     if ($joined -match '(?i)(cmd\.exe|powershell|\.bat\b|service\.bat|winws\.exe)') {
@@ -76,6 +75,7 @@ if ($PackageDirectory) {
         "runtime\FOG.Engine.exe",
         "runtime\WinDivert.dll",
         "runtime\WinDivert64.sys",
+        "runtime\voice_decoy_quic.bin",
         "THIRD_PARTY_NOTICES.md",
         "UPSTREAM.md"
     )

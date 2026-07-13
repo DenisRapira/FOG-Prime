@@ -13,6 +13,15 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Minimal WebView2 user interface.
 - Reproducible GitHub Actions build and release workflows.
 
+## [0.1.5] - 2026-07-13
+
+- Replaced broad RTP priming with a validated, narrow Discord voice handshake.
+- Limited media interception to UDP `19294-19344` and `50000-50100` so established
+  audio and unrelated high UDP ports are no longer modified.
+- Restored the ordered STUN and QUIC voice decoys with three repeats.
+- Added a dedicated `discord.media` transport profile for TCP ports
+  `2053`, `2083`, `2087`, `2096`, and `8443`.
+
 ## [0.1.4] - 2026-07-13
 
 - Extended Discord voice priming through the first RTP packets to prevent the
