@@ -2,16 +2,23 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
-## [Unreleased]
+## [0.1.7] - 2026-07-16
 
-### Foundation
+### Reliability
 
-- Source-built FOG Engine runtime.
-- Local FOG Agent with restricted named-pipe protocol.
-- Automatic Discord profile selection and health checks.
-- Runtime SHA-256 verification.
-- Minimal WebView2 user interface.
-- Reproducible GitHub Actions build and release workflows.
+- Added YouTube domains to the QUIC strategy of every automatic profile.
+- Replaced single transient startup checks with two-of-three stable health probes.
+- Serialized start, health, and recovery operations to prevent overlapping profile changes.
+- Reuse an already healthy Engine instead of restarting it on repeated start requests.
+- Stop stale v1/v2 Agents before every v3 session and save diagnostics immediately.
+
+### Security
+
+- Added a random per-session token and current-user ACL to the local named pipe.
+- Embedded the trusted Agent hash in the UI and trusted profiles/runtime manifest in the Agent.
+- Hardened WebView2 permissions, host objects, new windows, autofill, shortcuts, and developer surfaces.
+- Added package tamper tests for Agent, profiles, manifest, and runtime files.
+- Pinned GitHub Actions to immutable commits and restored signed HTTPS Cygwin downloads.
 
 ## [0.1.6] - 2026-07-13
 

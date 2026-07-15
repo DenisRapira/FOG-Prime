@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="wwwroot\index.html" />
+    <EmbeddedResource Include="$(FogAgentHashPath)" LogicalName="FOG.WebView2.TrustedAgent.sha256" Condition="'$(FogAgentHashPath)' != ''" />
   </ItemGroup>
 
   <ItemGroup>

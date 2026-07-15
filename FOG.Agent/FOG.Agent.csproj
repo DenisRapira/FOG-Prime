@@ -4,7 +4,6 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UserSecretsId>dotnet-FOG.Agent-c88e6b98-9f94-4798-9840-e43a8d07d3da</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,7 +16,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="profiles.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Update="runtime.manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Remove="profiles.json" />
+    <None Remove="runtime.manifest.json" />
+    <EmbeddedResource Include="profiles.json" LogicalName="FOG.Agent.TrustedProfiles.json" />
+    <EmbeddedResource Include="$(FogRuntimeManifestPath)" LogicalName="FOG.Agent.TrustedRuntimeManifest.json" Condition="'$(FogRuntimeManifestPath)' != ''" />
   </ItemGroup>
 </Project>

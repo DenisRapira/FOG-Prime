@@ -23,6 +23,15 @@ public sealed class EngineSupervisor(
         try
         {
             _desiredRunning = true;
+            if (IsRunning)
+            {
+                _lastProbes = await healthChecker.CheckStableAsync(cancellationToken);
+                if (AllHealthy(_lastProbes))
+                {
+                    return CreateSnapshot("ready");
+                }
+            }
+
             return await StartBestInternalAsync(cancellationToken);
         }
         finally
@@ -48,8 +57,15 @@ public sealed class EngineSupervisor(
 
     public async Task<AgentSnapshot> RefreshHealthAsync(CancellationToken cancellationToken)
     {
-        _lastProbes = await healthChecker.CheckAsync(cancellationToken);
-        return CreateSnapshot(IsRunning && _lastProbes.All(probe => probe.Ok) ? "ready" : IsRunning ? "degraded" : "stopped");
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await RefreshHealthInternalAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async Task<AgentSnapshot> RecoverIfNeededAsync(CancellationToken cancellationToken)
@@ -57,18 +73,23 @@ public sealed class EngineSupervisor(
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            if (!_desiredRunning)
+            {
+                return CreateSnapshot("stopped");
+            }
+
             if (_desiredRunning && !IsRunning)
             {
                 logger.LogWarning("FOG Engine is not running; starting automatic recovery");
                 return await StartBestInternalAsync(cancellationToken);
             }
+
+            return await RefreshHealthInternalAsync(cancellationToken);
         }
         finally
         {
             _gate.Release();
         }
-
-        return await RefreshHealthAsync(cancellationToken);
     }
 
     private async Task<AgentSnapshot> StartBestInternalAsync(CancellationToken cancellationToken)
@@ -76,34 +97,48 @@ public sealed class EngineSupervisor(
         await integrityVerifier.VerifyAsync(cancellationToken);
         await StopStaleEnginesAsync(cancellationToken);
 
+        EngineProfile? bestProfile = null;
+        var bestScore = -1;
         foreach (var profile in catalog.All)
         {
             await StopInternalAsync(cancellationToken);
             StartProfile(profile);
-            await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
-            _lastProbes = await healthChecker.CheckAsync(cancellationToken);
+            await Task.Delay(TimeSpan.FromMilliseconds(1200), cancellationToken);
+            _lastProbes = await healthChecker.CheckStableAsync(cancellationToken);
 
-            if (_engineProcess is { HasExited: false } && _lastProbes.All(probe => probe.Ok))
+            var score = IsRunning ? _lastProbes.Count(probe => probe.Ok) : -1;
+            if (score > bestScore)
             {
-                _activeProfile = profile;
+                bestScore = score;
+                bestProfile = profile;
+            }
+
+            if (IsRunning && AllHealthy(_lastProbes))
+            {
                 return CreateSnapshot("ready");
             }
         }
 
         await StopInternalAsync(cancellationToken);
-        var fallback = catalog.All[0];
-        StartProfile(fallback);
-        await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+        var selected = bestProfile ?? catalog.All[0];
+        StartProfile(selected);
+        await Task.Delay(TimeSpan.FromMilliseconds(1200), cancellationToken);
+        _lastProbes = await healthChecker.CheckStableAsync(cancellationToken);
+        return CreateSnapshot(IsRunning && AllHealthy(_lastProbes) ? "ready" : "degraded");
+    }
+
+    private async Task<AgentSnapshot> RefreshHealthInternalAsync(CancellationToken cancellationToken)
+    {
         _lastProbes = await healthChecker.CheckAsync(cancellationToken);
-        _activeProfile = fallback;
-        return CreateSnapshot("degraded");
+        return CreateSnapshot(IsRunning && AllHealthy(_lastProbes) ? "ready" : IsRunning ? "degraded" : "stopped");
     }
 
     private void StartProfile(EngineProfile profile)
     {
         var runtimeDirectory = options.Value.ResolveFromBase(options.Value.RuntimeDirectory);
         var executable = Path.GetFullPath(Path.Combine(runtimeDirectory, profile.Executable));
-        if (!executable.StartsWith(runtimeDirectory, StringComparison.OrdinalIgnoreCase) || !File.Exists(executable))
+        var relative = Path.GetRelativePath(runtimeDirectory, executable);
+        if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) || !File.Exists(executable))
         {
             throw new InvalidDataException("Engine executable is outside the trusted runtime directory.");
         }
@@ -123,25 +158,27 @@ public sealed class EngineSupervisor(
             startInfo.ArgumentList.Add(ExpandRuntimePath(argument, runtimeDirectory));
         }
 
-        _engineProcess = Process.Start(startInfo) ?? throw new InvalidOperationException("Engine process could not be created.");
-        _engineProcess.EnableRaisingEvents = true;
-        _engineProcess.OutputDataReceived += (_, eventArgs) =>
+        var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Engine process could not be created.");
+        _engineProcess = process;
+        process.EnableRaisingEvents = true;
+        process.OutputDataReceived += (_, eventArgs) =>
         {
             if (!string.IsNullOrWhiteSpace(eventArgs.Data))
             {
                 logger.LogDebug("FOG Engine: {Message}", eventArgs.Data);
             }
         };
-        _engineProcess.ErrorDataReceived += (_, eventArgs) =>
+        process.ErrorDataReceived += (_, eventArgs) =>
         {
             if (!string.IsNullOrWhiteSpace(eventArgs.Data))
             {
                 logger.LogWarning("FOG Engine: {Message}", eventArgs.Data);
             }
         };
-        _engineProcess.Exited += (_, _) => logger.LogWarning("FOG Engine exited with code {ExitCode}", _engineProcess?.ExitCode);
-        _engineProcess.BeginOutputReadLine();
-        _engineProcess.BeginErrorReadLine();
+        var processId = process.Id;
+        process.Exited += (_, _) => logger.LogWarning("FOG Engine process {ProcessId} exited", processId);
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
         _activeProfile = profile;
         logger.LogInformation("FOG Engine started with profile {ProfileId}", profile.Id);
     }
@@ -151,7 +188,6 @@ public sealed class EngineSupervisor(
         var process = _engineProcess;
         _engineProcess = null;
         _activeProfile = null;
-
         if (process is null)
         {
             return;
@@ -196,21 +232,19 @@ public sealed class EngineSupervisor(
         }
     }
 
-    private AgentSnapshot CreateSnapshot(string state)
-    {
-        return new AgentSnapshot(
-            state,
-            IsRunning,
-            _lastProbes.Count > 0 && _lastProbes.All(probe => probe.Ok),
-            _activeProfile?.Id,
-            DateTimeOffset.UtcNow,
-            _lastProbes);
-    }
+    private AgentSnapshot CreateSnapshot(string state) => new(
+        state,
+        IsRunning,
+        _lastProbes.Count > 0 && AllHealthy(_lastProbes),
+        _activeProfile?.Id,
+        DateTimeOffset.UtcNow,
+        _lastProbes);
 
     private bool IsRunning => _engineProcess is { HasExited: false };
 
-    private static string ExpandRuntimePath(string value, string runtimeDirectory)
-    {
-        return value.Replace("${runtime}", runtimeDirectory, StringComparison.OrdinalIgnoreCase);
-    }
+    private static bool AllHealthy(IReadOnlyList<ProbeResult> probes) =>
+        probes.Count > 0 && probes.All(probe => probe.Ok);
+
+    private static string ExpandRuntimePath(string value, string runtimeDirectory) =>
+        value.Replace("${runtime}", runtimeDirectory, StringComparison.OrdinalIgnoreCase);
 }

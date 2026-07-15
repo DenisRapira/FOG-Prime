@@ -7,24 +7,33 @@ namespace FOG.Agent;
 
 public sealed class RuntimeIntegrityVerifier(IOptions<AgentOptions> options)
 {
+    private const string TrustedManifestResource = "FOG.Agent.TrustedRuntimeManifest.json";
+
     public async Task VerifyAsync(CancellationToken cancellationToken)
     {
+        var trustedBytes = await ReadTrustedManifestAsync(cancellationToken);
         var manifestPath = options.Value.ResolveFromBase(options.Value.ManifestPath);
-        var runtimeRoot = options.Value.ResolveFromBase(options.Value.RuntimeDirectory);
-        var manifest = JsonSerializer.Deserialize<RuntimeManifest>(await File.ReadAllTextAsync(manifestPath, cancellationToken), new JsonSerializerOptions(JsonSerializerDefaults.Web))
-            ?? throw new InvalidDataException("Runtime manifest is invalid.");
+        var externalBytes = await File.ReadAllBytesAsync(manifestPath, cancellationToken);
+        if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(trustedBytes), SHA256.HashData(externalBytes)))
+        {
+            throw new InvalidDataException("Runtime manifest integrity check failed.");
+        }
 
+        var runtimeRoot = options.Value.ResolveFromBase(options.Value.RuntimeDirectory);
+        var manifest = JsonSerializer.Deserialize<RuntimeManifest>(trustedBytes, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new InvalidDataException("Trusted runtime manifest is invalid.");
         if (manifest.Sha256.Count == 0)
         {
-            throw new InvalidDataException("Runtime manifest does not contain trusted file hashes.");
+            throw new InvalidDataException("Trusted runtime manifest does not contain file hashes.");
         }
 
         foreach (var entry in manifest.Sha256)
         {
             var fullPath = Path.GetFullPath(Path.Combine(runtimeRoot, entry.Key));
-            if (!fullPath.StartsWith(runtimeRoot, StringComparison.OrdinalIgnoreCase) || !File.Exists(fullPath))
+            var relative = Path.GetRelativePath(runtimeRoot, fullPath);
+            if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) || !File.Exists(fullPath))
             {
-                throw new InvalidDataException($"Runtime file is missing: {entry.Key}");
+                throw new InvalidDataException($"Runtime file is missing or unsafe: {entry.Key}");
             }
 
             await using var stream = File.OpenRead(fullPath);
@@ -34,5 +43,14 @@ public sealed class RuntimeIntegrityVerifier(IOptions<AgentOptions> options)
                 throw new InvalidDataException($"Runtime integrity check failed: {entry.Key}");
             }
         }
+    }
+
+    private static async Task<byte[]> ReadTrustedManifestAsync(CancellationToken cancellationToken)
+    {
+        await using var resource = typeof(RuntimeIntegrityVerifier).Assembly.GetManifestResourceStream(TrustedManifestResource)
+            ?? throw new InvalidDataException("Trusted runtime manifest is missing from this build.");
+        using var memory = new MemoryStream();
+        await resource.CopyToAsync(memory, cancellationToken);
+        return memory.ToArray();
     }
 }

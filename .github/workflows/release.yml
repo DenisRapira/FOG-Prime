@@ -12,15 +12,15 @@ jobs:
   windows-x64:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: 8.0.x
-      - uses: cygwin/cygwin-install-action@v4
+      - uses: cygwin/cygwin-install-action@006ad0b0946ca6d0a3ea2d4437677fa767392401 # v4
         with:
           platform: x86_64
-          site: http://ctm.crouchingtigerhiddenfruitbat.org/pub/cygwin/circa/64bit/2024/01/30/231215
-          check-sig: false
+          site: https://mirrors.kernel.org/sourceware/cygwin/
+          check-sig: true
           packages: gcc-core make zlib-devel
 
       - name: Resolve version
@@ -49,7 +49,7 @@ jobs:
           Compress-Archive -Path ./release/FOG-Prime/* -DestinationPath $archive
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($archive))" | Set-Content "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256" -Encoding ascii
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: FOG-Prime-${{ steps.version.outputs.value }}-win-x64
           path: |

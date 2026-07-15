@@ -32,6 +32,16 @@ foreach ($profile in $profiles) {
     if (-not (@($profile.arguments) -contains "--filter-udp=19294-19344,50000-50100")) {
         throw "Profile $($profile.id) does not filter the validated Discord voice UDP range."
     }
+    $quicFilterIndex = [Array]::IndexOf([object[]]$profile.arguments, "--filter-udp=443")
+    if ($quicFilterIndex -lt 0 -or $quicFilterIndex + 1 -ge $profile.arguments.Count) {
+        throw "Profile $($profile.id) is missing the QUIC filter."
+    }
+    $quicHostlist = $profile.arguments[$quicFilterIndex + 1]
+    foreach ($domain in @("discord.com", "youtube.com", "googlevideo.com", "ytimg.com")) {
+        if ($quicHostlist -notmatch "(^|=|,)$([regex]::Escape($domain))(,|$)") {
+            throw "Profile $($profile.id) QUIC hostlist is missing $domain."
+        }
+    }
     if (-not (@($profile.arguments) -contains "--filter-l7=discord,stun")) {
         throw "Profile $($profile.id) is missing Discord voice protocol filtering."
     }
@@ -60,11 +70,31 @@ $pipeServerSource = Get-Content (Join-Path $root "FOG.Agent\AgentPipeServer.cs")
 $supervisorSource = Get-Content (Join-Path $root "FOG.Agent\EngineSupervisor.cs") -Raw
 $healthSource = Get-Content (Join-Path $root "FOG.Agent\ConnectionHealthChecker.cs") -Raw
 $windowSource = Get-Content (Join-Path $root "FOG.WebView2\MainWindow.xaml.cs") -Raw
+$protocolSource = Get-Content (Join-Path $root "FOG.Protocol\AgentProtocol.cs") -Raw
+$agentClientSource = Get-Content (Join-Path $root "FOG.WebView2\AgentClient.cs") -Raw
+$profileCatalogSource = Get-Content (Join-Path $root "FOG.Agent\ProfileCatalog.cs") -Raw
+$integritySource = Get-Content (Join-Path $root "FOG.Agent\RuntimeIntegrityVerifier.cs") -Raw
+$agentProjectSource = Get-Content (Join-Path $root "FOG.Agent\FOG.Agent.csproj") -Raw
+$uiProjectSource = Get-Content (Join-Path $root "FOG.WebView2\FOG.WebView2.csproj") -Raw
+$packageSource = Get-Content (Join-Path $root "build\package.ps1") -Raw
 if ($pipeServerSource -notmatch '"shutdown"\s*=>') { throw "Agent shutdown command is missing." }
+if ($protocolSource -notmatch 'PipeName\s*=\s*"fog-prime-agent-v3"' -or $protocolSource -notmatch 'Version\s*=\s*3') { throw "Authenticated Agent protocol v3 is missing." }
+if ($protocolSource -notmatch 'AgentRequest\(string Command, string\? CorrelationId = null, string\? SessionToken = null\)') { throw "Agent requests do not carry session authentication." }
+if ($pipeServerSource -notmatch 'PipeOptions\.CurrentUserOnly' -or $pipeServerSource -notmatch 'CryptographicOperations\.FixedTimeEquals') { throw "Agent pipe access control is incomplete." }
+if ($pipeServerSource -notmatch 'ReadLimitedLineAsync\(reader, 4096' -or $pipeServerSource -notmatch '"ping"\s*=>') { throw "Agent pipe request hardening is incomplete." }
+if ($agentClientSource -notmatch 'RandomNumberGenerator\.GetBytes\(32\)' -or $agentClientSource -notmatch 'TrustedAgent\.sha256' -or $agentClientSource -notmatch 'mismatched response') { throw "UI-to-Agent trust validation is incomplete." }
+if ($agentClientSource -notmatch 'TryTerminate\(unresponsiveAgent\)' -or $agentClientSource -notmatch 'TryTerminate\(timedOutAgent\)') { throw "Unresponsive Agent replacement is missing." }
+if ($profileCatalogSource -notmatch 'TrustedProfiles\.json' -or $profileCatalogSource -notmatch 'FixedTimeEquals') { throw "Embedded profile trust validation is missing." }
+if ($integritySource -notmatch 'TrustedRuntimeManifest\.json' -or $integritySource -notmatch 'Path\.GetRelativePath') { throw "Embedded runtime trust validation is missing." }
+if ($agentProjectSource -notmatch 'FogRuntimeManifestPath' -or $uiProjectSource -notmatch 'FogAgentHashPath') { throw "Trusted build resources are not configured." }
+if ($packageSource -notmatch 'trusted-runtime\.manifest\.json' -or $packageSource -notmatch 'trusted-agent\.sha256' -or $packageSource -notmatch 'FogAgentHashPath') { throw "Package trust chain is incomplete." }
 if ($supervisorSource -notmatch 'RecoverIfNeededAsync') { throw "Automatic Engine recovery is missing." }
-if ($supervisorSource -notmatch 'var fallback = catalog\.All\[0\]') { throw "Degraded profile fallback is missing." }
+if ($supervisorSource -notmatch 'bestProfile \?\? catalog\.All\[0\]') { throw "Scored degraded profile fallback is missing." }
+if ($supervisorSource -notmatch '(?s)if \(IsRunning\).*?CheckStableAsync' -or $supervisorSource -notmatch 'SemaphoreSlim _gate') { throw "Stable serialized Engine startup is missing." }
 if ($healthSource -notmatch 'youtube\.com/generate_204') { throw "YouTube health probe is missing." }
+if ($healthSource -notmatch 'CheckStableAsync' -or $healthSource -notmatch 'youtube-cdn' -or $healthSource -notmatch 'successes >= 2') { throw "Repeated Discord and YouTube health validation is missing." }
 if ($windowSource -notmatch 'Closing\s*\+=\s*OnClosing') { throw "Window close cleanup is missing." }
+if ($windowSource -notmatch 'SemaphoreSlim _primeGate' -or $windowSource -notmatch 'AreHostObjectsAllowed\s*=\s*false') { throw "UI concurrency or WebView2 hardening is missing." }
 
 $applicationSources = Get-ChildItem (Join-Path $root "FOG.Agent"), (Join-Path $root "FOG.Protocol"), (Join-Path $root "FOG.WebView2") -Recurse -File |
     Where-Object { $_.FullName -notmatch '[\\/](bin|obj|release|publish)[\\/]' }
@@ -72,6 +102,12 @@ $forbidden = $applicationSources | Select-String -Pattern 'service\.bat|general 
 if ($forbidden) {
     $paths = ($forbidden.Path | Select-Object -Unique) -join ', '
     throw "Application source contains forbidden legacy launcher references: $paths"
+}
+
+$workflowSources = Get-ChildItem (Join-Path $root ".github\workflows") -Filter "*.yml" -File | Get-Content -Raw
+if (($workflowSources -join "`n") -match '(?m)^\s*- uses:\s+[^#\r\n]+@v\d+' -or
+    ($workflowSources -join "`n") -match 'http://|check-sig:\s*false') {
+    throw "GitHub Actions must use immutable commits and signed HTTPS dependencies."
 }
 
 if ($PackageDirectory) {

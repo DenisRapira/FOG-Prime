@@ -18,6 +18,7 @@ public partial class MainWindow : Window
     };
 
     private readonly AgentClient _agentClient = new();
+    private readonly SemaphoreSlim _primeGate = new(1, 1);
     private bool _primeStarted;
     private bool _shutdownComplete;
     private bool _shutdownInProgress;
@@ -72,6 +73,14 @@ public partial class MainWindow : Window
         await Browser.EnsureCoreWebView2Async(environment);
         Browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
         Browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
+        Browser.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
+        Browser.CoreWebView2.Settings.AreHostObjectsAllowed = false;
+        Browser.CoreWebView2.Settings.IsGeneralAutofillEnabled = false;
+        Browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
+        Browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
+        Browser.CoreWebView2.Settings.IsZoomControlEnabled = false;
+        Browser.CoreWebView2.NewWindowRequested += (_, args) => args.Handled = true;
+        Browser.CoreWebView2.PermissionRequested += (_, args) => args.State = CoreWebView2PermissionState.Deny;
         Browser.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
 
         using var stream = typeof(MainWindow).Assembly.GetManifestResourceStream("FOG.WebView2.wwwroot.index.html")
@@ -109,39 +118,52 @@ public partial class MainWindow : Window
 
     private async Task RunPrimeAsync(bool autoStart)
     {
-        await PostAsync("prime", new PrimePayload("checking", "Проверяем систему", "Это займет несколько секунд.", 16, null, Array.Empty<CheckItem>()));
-        var diagnostics = BuildDiagnostics();
-
-        if (diagnostics.Summary.Fail > 0)
+        if (!await _primeGate.WaitAsync(0))
         {
-            await PostAsync("prime", new PrimePayload("needsAttention", "Нужна помощь", "Не удалось подготовить компоненты FOG Prime.", 100, diagnostics, Array.Empty<CheckItem>()));
             return;
         }
 
-        await PostAsync("prime", new PrimePayload("starting", "Настраиваем соединение", "Подбираем рабочий режим автоматически.", 42, diagnostics, Array.Empty<CheckItem>()));
-
-        AgentResponse response;
         try
         {
-            response = await _agentClient.SendAsync(autoStart ? "start" : "recheck", CancellationToken.None);
-        }
-        catch
-        {
-            await PostAsync("prime", new PrimePayload("needsAttention", "Нужна помощь", "Локальный сервис FOG Prime не готов.", 100, diagnostics, Array.Empty<CheckItem>()));
-            return;
-        }
+            await PostAsync("prime", new PrimePayload("checking", "Проверяем систему", "Это займет несколько секунд.", 16, null, Array.Empty<CheckItem>()));
+            var diagnostics = BuildDiagnostics();
 
-        var snapshot = response.Snapshot;
-        var checks = snapshot?.Probes.Select(probe => new CheckItem(probe.Name, probe.Ok ? "ok" : "fail", probe.Detail)).ToArray()
-            ?? Array.Empty<CheckItem>();
-        var ready = response.Ok && snapshot is { EngineRunning: true, ConnectionHealthy: true };
-        await PostAsync("prime", new PrimePayload(
-            ready ? "ready" : "needsAttention",
-            ready ? "Все готово" : "Нужна помощь",
-            ready ? "FOG работает. Оставьте окно открытым во время использования." : "Не удалось подтвердить соединение. Попробуйте еще раз.",
-            100,
-            diagnostics,
-            checks));
+            if (diagnostics.Summary.Fail > 0)
+            {
+                await PostAsync("prime", new PrimePayload("needsAttention", "Нужна помощь", "Не удалось подготовить компоненты FOG Prime.", 100, diagnostics, Array.Empty<CheckItem>()));
+                return;
+            }
+
+            await PostAsync("prime", new PrimePayload("starting", "Настраиваем соединение", "Подбираем рабочий режим автоматически.", 42, diagnostics, Array.Empty<CheckItem>()));
+
+            AgentResponse response;
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(75));
+                response = await _agentClient.SendAsync(autoStart ? "start" : "recheck", timeout.Token);
+            }
+            catch
+            {
+                await PostAsync("prime", new PrimePayload("needsAttention", "Нужна помощь", "Локальный сервис FOG Prime не готов.", 100, diagnostics, Array.Empty<CheckItem>()));
+                return;
+            }
+
+            var snapshot = response.Snapshot;
+            var checks = snapshot?.Probes.Select(probe => new CheckItem(probe.Name, probe.Ok ? "ok" : "fail", probe.Detail)).ToArray()
+                ?? Array.Empty<CheckItem>();
+            var ready = response.Ok && snapshot is { EngineRunning: true, ConnectionHealthy: true };
+            await PostAsync("prime", new PrimePayload(
+                ready ? "ready" : "needsAttention",
+                ready ? "Все готово" : "Нужна помощь",
+                ready ? "FOG работает. Оставьте окно открытым во время использования." : "Не удалось подтвердить соединение. Попробуйте еще раз.",
+                100,
+                diagnostics,
+                checks));
+        }
+        finally
+        {
+            _primeGate.Release();
+        }
     }
 
     private static bool IsAutoStartDisabled()

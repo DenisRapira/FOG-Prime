@@ -41,6 +41,18 @@ The destination must be absent or empty:
 .\build\verify-repository.ps1 -PackageDirectory .\release\FOG-Prime
 ```
 
+## Integration tests
+
+Run these from an elevated PowerShell session on a disposable package directory. They do not stop VPN clients or unrelated applications.
+
+```powershell
+.\build\test-package-security.ps1 -PackageDirectory .\release\FOG-Prime
+.\build\test-startup-reliability.ps1 -PackageDirectory .\release\FOG-Prime -Cycles 10
+.\build\test-ui-lifecycle.ps1 -PackageDirectory .\release\FOG-Prime
+```
+
+The security test modifies temporary package copies only. The reliability and UI tests start the real network Engine and clean up all FOG processes when complete.
+
 ## Create a GitHub release
 
 Push a signed or annotated tag such as `v0.1.0`. The `Release` workflow builds the Engine and application from source, verifies the package, uploads a CI artifact, and creates a GitHub Release ZIP.

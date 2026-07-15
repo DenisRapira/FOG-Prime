@@ -8,10 +8,10 @@ Extract the complete release ZIP. Do not move only `FOG Prime.exe`; it requires 
 
 Check the downloaded archive properties, Windows Security history, and whether the signed WinDivert driver remains in `runtime`. Do not disable security software globally.
 
-## Discord check fails
+## Discord or YouTube check fails
 
-Restart FOG Prime so Agent can retry all allowed profiles. Temporarily disable conflicting VPN or packet-filtering applications and retry. Corporate network policy may intentionally prevent this software from operating.
+Use the retry action once so Agent can run stable checks against all allowed profiles. Temporarily disable conflicting VPN or packet-filtering applications and retry. Corporate network policy may intentionally prevent this software from operating. The latest diagnostic snapshot is stored in `%ProgramData%\FOG Prime\state.json`.
 
 ## Clean removal
 
-Run `build/uninstall-agent-service.ps1` from an elevated PowerShell session if Agent was installed as a service, then remove the extracted application folder.
+Close the FOG Prime window and confirm that `FOG Prime`, `FOG.Agent`, and `FOG.Engine` are no longer present in Task Manager. Then remove the extracted application folder. FOG Prime does not install a persistent Windows service.
