@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>FOG Prime</title>
   <style>
     :root {
@@ -317,6 +318,101 @@
       transition: width 300ms ease-out;
     }
 
+    .dialog-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(8px);
+    }
+
+    .dialog-layer[hidden] {
+      display: none;
+    }
+
+    .dialog {
+      width: min(100%, 390px);
+      border: 1px solid var(--black);
+      border-radius: 8px;
+      background: var(--white);
+      overflow: hidden;
+    }
+
+    .dialog-copy {
+      padding: 28px;
+    }
+
+    .dialog-label {
+      margin: 0 0 10px;
+      color: var(--pink);
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .dialog-title {
+      margin: 0;
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 24px;
+      line-height: 1.15;
+    }
+
+    .dialog-message {
+      margin: 14px 0 0;
+      color: var(--off-black);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .dialog-action {
+      width: 100%;
+      min-height: 56px;
+      border: 0;
+      border-top: 1px solid var(--black);
+      border-radius: 0;
+      background: var(--black);
+      color: var(--white);
+      cursor: pointer;
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      transition: color 220ms ease-out, background-color 220ms ease-out, border-color 220ms ease-out;
+    }
+
+    .dialog-action:hover,
+    .dialog-action:focus-visible {
+      background: var(--off-black);
+    }
+
+    .dialog-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-top: 1px solid var(--black);
+    }
+
+    .dialog-actions .dialog-action {
+      border-top: 0;
+    }
+
+    .dialog-actions .dialog-action + .dialog-action {
+      border-left: 1px solid var(--black);
+    }
+
+    .dialog-secondary {
+      background: var(--white);
+      color: var(--black);
+    }
+
+    .dialog-secondary:hover,
+    .dialog-secondary:focus-visible {
+      background: var(--wire);
+    }
+
     @media (max-height: 820px) {
       .hero {
         padding-block: 26px 20px;
@@ -392,10 +488,45 @@
     </footer>
   </div>
 
+  <div id="vpnDialog" class="dialog-layer" role="dialog" aria-modal="true" aria-labelledby="vpnTitle" hidden>
+    <section class="dialog">
+      <div class="dialog-copy">
+        <p class="dialog-label">Compatibility notice</p>
+        <h2 id="vpnTitle" class="dialog-title">Обнаружен VPN</h2>
+        <p class="dialog-message">FOG не будет менять настройки VPN и не запустит свой сетевой драйвер поверх него. Доступ проверится автоматически.</p>
+      </div>
+      <button id="vpnDismiss" class="dialog-action" type="button">Понятно</button>
+    </section>
+  </div>
+
+  <div id="updateDialog" class="dialog-layer" role="dialog" aria-modal="true" aria-labelledby="updateTitle" hidden>
+    <section class="dialog">
+      <div class="dialog-copy">
+        <p class="dialog-label">Update available</p>
+        <h2 id="updateTitle" class="dialog-title">Доступно обновление</h2>
+        <p id="updateMessage" class="dialog-message">Новая версия FOG Prime готова к загрузке.</p>
+      </div>
+      <div class="dialog-actions">
+        <button id="updateLater" class="dialog-action dialog-secondary" type="button">Позже</button>
+        <button id="updateOpen" class="dialog-action" type="button">Скачать</button>
+      </div>
+    </section>
+  </div>
+
   <script>
     const stageIds = ["stageSystem", "stageEngine", "stageAccess"];
     const actionButton = document.getElementById("actionButton");
+    const vpnDialog = document.getElementById("vpnDialog");
+    const vpnDismiss = document.getElementById("vpnDismiss");
+    const updateDialog = document.getElementById("updateDialog");
+    const updateMessage = document.getElementById("updateMessage");
+    const updateLater = document.getElementById("updateLater");
+    const updateOpen = document.getElementById("updateOpen");
     let currentStatus = "checking";
+    let vpnWasActive = false;
+    let vpnDismissed = false;
+    let updatePending = false;
+    let updateDismissed = false;
 
     function post(command) {
       window.chrome.webview.postMessage({ command });
@@ -429,14 +560,21 @@
         setStage(1, "done");
         setStage(2, "active");
         document.getElementById("resultValue").textContent = "Проверяем доступ";
-      } else if (payload.status === "ready") {
+      } else if (payload.status === "ready" || payload.status === "vpnReady") {
         setStage(0, "done");
         setStage(1, "done");
         setStage(2, "done");
-        document.getElementById("kicker").textContent = "Connection verified";
-        document.getElementById("resultValue").textContent = "Соединение готово";
+        document.getElementById("kicker").textContent = payload.status === "vpnReady" ? "VPN protected" : "Connection verified";
+        document.getElementById("resultValue").textContent = payload.status === "vpnReady" ? "VPN активен, связь готова" : "Соединение готово";
         actionButton.textContent = "Закрыть";
         actionButton.hidden = false;
+      } else if (payload.status === "recovering") {
+        setStage(0, "done");
+        setStage(1, "active");
+        setStage(2, "");
+        document.getElementById("kicker").textContent = "Automatic recovery";
+        document.getElementById("resultValue").textContent = "Переключаем маршрут";
+        actionButton.hidden = true;
       } else {
         setStage(0, payload.diagnostics && payload.diagnostics.summary.fail > 0 ? "failed" : "done");
         setStage(1, "done");
@@ -447,8 +585,45 @@
         actionButton.hidden = false;
       }
 
-      if (!["ready", "needsAttention"].includes(payload.status)) {
+      if (!["ready", "vpnReady", "needsAttention"].includes(payload.status)) {
         actionButton.hidden = true;
+      }
+    }
+
+    function renderVpn(payload) {
+      const active = Boolean(payload && payload.active);
+      if (active && !vpnWasActive) {
+        vpnDismissed = false;
+      }
+
+      if (!active) {
+        vpnDismissed = false;
+      }
+
+      vpnWasActive = active;
+      refreshDialogs();
+    }
+
+    function renderUpdate(payload) {
+      updatePending = true;
+      updateDismissed = false;
+      updateMessage.textContent = `Версия ${payload.version} готова. Откроем официальную страницу релиза на GitHub.`;
+      refreshDialogs();
+    }
+
+    function refreshDialogs() {
+      const showVpn = vpnWasActive && !vpnDismissed;
+      const vpnWasHidden = vpnDialog.hidden;
+      vpnDialog.hidden = !showVpn;
+
+      const showUpdate = !showVpn && updatePending && !updateDismissed;
+      const updateWasHidden = updateDialog.hidden;
+      updateDialog.hidden = !showUpdate;
+
+      if (showVpn && vpnWasHidden) {
+        vpnDismiss.focus();
+      } else if (showUpdate && updateWasHidden) {
+        updateOpen.focus();
       }
     }
 
@@ -456,11 +631,31 @@
       const { type, payload } = event.data;
       if (type === "prime") {
         renderPrime(payload);
+      } else if (type === "vpn") {
+        renderVpn(payload);
+      } else if (type === "update") {
+        renderUpdate(payload);
       }
     });
 
+    vpnDismiss.addEventListener("click", () => {
+      vpnDismissed = true;
+      refreshDialogs();
+    });
+
+    updateLater.addEventListener("click", () => {
+      updateDismissed = true;
+      refreshDialogs();
+    });
+
+    updateOpen.addEventListener("click", () => {
+      updateDismissed = true;
+      refreshDialogs();
+      post("openUpdate");
+    });
+
     actionButton.addEventListener("click", () => {
-      if (currentStatus === "ready") {
+      if (["ready", "vpnReady"].includes(currentStatus)) {
         post("close");
       } else {
         actionButton.hidden = true;

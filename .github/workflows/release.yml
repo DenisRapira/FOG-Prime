@@ -12,15 +12,15 @@ jobs:
   windows-x64:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 8.0.x
-      - uses: cygwin/cygwin-install-action@v4
+      - uses: cygwin/cygwin-install-action@006ad0b0946ca6d0a3ea2d4437677fa767392401 # v4
         with:
           platform: x86_64
-          site: http://ctm.crouchingtigerhiddenfruitbat.org/pub/cygwin/circa/64bit/2024/01/30/231215
-          check-sig: false
+          site: https://mirrors.kernel.org/sourceware/cygwin/
+          check-sig: true
           packages: gcc-core make zlib-devel
 
       - name: Resolve version
@@ -42,6 +42,9 @@ jobs:
       - name: Verify package
         shell: powershell
         run: ./build/verify-repository.ps1 -PackageDirectory ./release/FOG-Prime
+      - name: Test package security
+        shell: powershell
+        run: ./build/test-package-security.ps1 -PackageDirectory ./release/FOG-Prime
       - name: Create ZIP
         shell: powershell
         run: |
@@ -49,7 +52,7 @@ jobs:
           Compress-Archive -Path ./release/FOG-Prime/* -DestinationPath $archive
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($archive))" | Set-Content "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256" -Encoding ascii
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: FOG-Prime-${{ steps.version.outputs.value }}-win-x64
           path: |

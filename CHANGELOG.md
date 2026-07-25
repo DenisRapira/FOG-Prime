@@ -13,6 +13,31 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Minimal WebView2 user interface.
 - Reproducible GitHub Actions build and release workflows.
 
+## [0.1.7] - 2026-07-22
+
+- Fixed a regression that could report a normal connection as ready and skip
+  FOG Engine even though Discord voice or YouTube media still required it.
+- Direct mode is now restricted to a detected, healthy external VPN; after the
+  VPN closes, FOG Engine starts immediately without restarting the application.
+- Added bounded local diagnostics for UI, Agent, profile, probe, and Engine
+  failures without displaying technical noise in the interface.
+- Fixed the startup IPC timeout that could terminate the Agent before the first
+  profile started, then leave the interface polling a stopped replacement Agent.
+- Normal mode now starts FOG Engine immediately without a redundant blocked-network
+  probe; busy Agents are preserved and automatic start is retried after recovery.
+- Added EAC-aware lifecycle handling so protected-game detection does not restart
+  or rewrite a live validated Engine profile.
+- Added generic VPN/tunnel detection, a one-time warning, and direct mode that
+  keeps WinDivert stopped while an external tunnel is active.
+- Added stable repeated Discord and YouTube probes, reserve profile rotation,
+  and bounded recovery after WinDivert failures.
+- Added authenticated current-user IPC v3 and embedded trust checks for the
+  Agent, profiles, runtime manifest, and runtime files.
+- Added a safe GitHub Releases update check that only opens the verified official
+  release page after user confirmation.
+- Added package tamper tests, EAC lifecycle coverage, and verified clean shutdown
+  with no FOG processes left in the background.
+
 ## [0.1.6] - 2026-07-13
 
 - Added automatic YouTube TLS and QUIC handling with a live connectivity probe.

@@ -2,12 +2,13 @@ namespace FOG.Protocol;
 
 public static class AgentProtocol
 {
-    public const string PipeName = "fog-prime-agent-v2";
-    public const string LegacyPipeName = "fog-prime-agent-v1";
-    public const int Version = 2;
+    public const string PipeName = "fog-prime-agent-v3";
+    public const string LegacyPipeName = "fog-prime-agent-v2";
+    public const string LegacyPipeNameV1 = "fog-prime-agent-v1";
+    public const int Version = 3;
 }
 
-public sealed record AgentRequest(string Command, string? CorrelationId = null);
+public sealed record AgentRequest(string Command, string? CorrelationId = null, string? SessionToken = null);
 
 public sealed record AgentResponse(
     bool Ok,
@@ -22,7 +23,16 @@ public sealed record AgentSnapshot(
     bool ConnectionHealthy,
     string? ActiveProfile,
     DateTimeOffset UpdatedAt,
-    IReadOnlyList<ProbeResult> Probes);
+    IReadOnlyList<ProbeResult> Probes,
+    CompatibilityInfo? Compatibility = null,
+    string TransportMode = "engine",
+    string? ActiveTunnel = null);
+
+public sealed record CompatibilityInfo(
+    bool Paused,
+    string? Reason,
+    string? Signal,
+    DateTimeOffset? RetryAt);
 
 public sealed record ProbeResult(string Name, bool Ok, int LatencyMs, string Detail);
 

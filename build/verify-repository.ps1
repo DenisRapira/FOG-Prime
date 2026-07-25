@@ -11,6 +11,9 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE -ne 0) { throw "Solution build failed." }
 }
 
+dotnet run --project (Join-Path $root "FOG.Agent.Tests\FOG.Agent.Tests.csproj") -c Release --no-build
+if ($LASTEXITCODE -ne 0) { throw "Compatibility tests failed." }
+
 $profilesPath = Join-Path $root "FOG.Agent\profiles.json"
 $profiles = Get-Content $profilesPath -Raw | ConvertFrom-Json
 if (-not $profiles -or @($profiles).Count -lt 2) { throw "At least two automatic profiles are required." }
@@ -60,11 +63,78 @@ $pipeServerSource = Get-Content (Join-Path $root "FOG.Agent\AgentPipeServer.cs")
 $supervisorSource = Get-Content (Join-Path $root "FOG.Agent\EngineSupervisor.cs") -Raw
 $healthSource = Get-Content (Join-Path $root "FOG.Agent\ConnectionHealthChecker.cs") -Raw
 $windowSource = Get-Content (Join-Path $root "FOG.WebView2\MainWindow.xaml.cs") -Raw
+$interfaceSource = Get-Content (Join-Path $root "FOG.WebView2\wwwroot\index.html") -Raw
+$updateSource = Get-Content (Join-Path $root "FOG.WebView2\UpdateChecker.cs") -Raw
+$protocolSource = Get-Content (Join-Path $root "FOG.Protocol\AgentProtocol.cs") -Raw
+$agentClientSource = Get-Content (Join-Path $root "FOG.WebView2\AgentClient.cs") -Raw
+$profileCatalogSource = Get-Content (Join-Path $root "FOG.Agent\ProfileCatalog.cs") -Raw
+$integritySource = Get-Content (Join-Path $root "FOG.Agent\RuntimeIntegrityVerifier.cs") -Raw
+$agentProjectSource = Get-Content (Join-Path $root "FOG.Agent\FOG.Agent.csproj") -Raw
+$uiProjectSource = Get-Content (Join-Path $root "FOG.WebView2\FOG.WebView2.csproj") -Raw
+$packageSource = Get-Content (Join-Path $root "build\package.ps1") -Raw
 if ($pipeServerSource -notmatch '"shutdown"\s*=>') { throw "Agent shutdown command is missing." }
+if ($protocolSource -notmatch 'fog-prime-agent-v3' -or
+    $protocolSource -notmatch 'SessionToken') {
+    throw "Authenticated Agent protocol v3 is missing."
+}
+if ($pipeServerSource -notmatch 'PipeOptions\.CurrentUserOnly' -or
+    $pipeServerSource -notmatch 'CryptographicOperations\.FixedTimeEquals' -or
+    $pipeServerSource -notmatch 'ReadLimitedLineAsync\(reader, 4096') {
+    throw "Agent pipe access control is incomplete."
+}
+if ($agentClientSource -notmatch 'RandomNumberGenerator\.GetBytes\(32\)' -or
+    $agentClientSource -notmatch 'TrustedAgent\.sha256' -or
+    $agentClientSource -notmatch 'mismatched response' -or
+    $agentClientSource -notmatch 'TerminateOwnedProcesses') {
+    throw "UI-to-Agent trust validation is incomplete."
+}
+if ($profileCatalogSource -notmatch 'TrustedProfiles\.json' -or
+    $profileCatalogSource -notmatch 'FixedTimeEquals') {
+    throw "Embedded profile trust validation is missing."
+}
+if ($integritySource -notmatch 'TrustedRuntimeManifest\.json' -or
+    $integritySource -notmatch 'Path\.GetRelativePath') {
+    throw "Embedded runtime trust validation is missing."
+}
+if ($agentProjectSource -notmatch 'FogRuntimeManifestPath' -or
+    $uiProjectSource -notmatch 'FogAgentHashPath' -or
+    $packageSource -notmatch 'trusted-agent\.sha256' -or
+    $packageSource -notmatch 'NuGetLockFilePath=obj\\publish-win-x64\.packages\.lock\.json') {
+    throw "Package trust chain is incomplete."
+}
 if ($supervisorSource -notmatch 'RecoverIfNeededAsync') { throw "Automatic Engine recovery is missing." }
-if ($supervisorSource -notmatch 'var fallback = catalog\.All\[0\]') { throw "Degraded profile fallback is missing." }
+if ($supervisorSource -notmatch 'ShouldRotateProfile' -or
+    $supervisorSource -match '\-\-wf-raw' -or
+    $supervisorSource -notmatch 'WaitAsync\(0, cancellationToken\)') {
+    throw "Engine recovery must preserve a running validated profile and its native filter arguments."
+}
+if ($pipeServerSource -notmatch 'MaxConnections = 4') {
+    throw "Agent IPC cannot remain responsive during a long connection check."
+}
 if ($healthSource -notmatch 'youtube\.com/generate_204') { throw "YouTube health probe is missing." }
 if ($windowSource -notmatch 'Closing\s*\+=\s*OnClosing') { throw "Window close cleanup is missing." }
+if ($windowSource -notmatch 'MonitorAsync') { throw "Continuous UI state monitoring is missing." }
+if ($windowSource -notmatch 'AreHostObjectsAllowed\s*=\s*false' -or
+    $windowSource -notmatch 'NavigationStarting' -or
+    $windowSource -notmatch 'PermissionRequested' -or
+    $interfaceSource -notmatch 'Content-Security-Policy') {
+    throw "WebView2 hardening is missing."
+}
+if ($windowSource -notmatch 'PostAsync\("vpn"') { throw "VPN warning state is not sent to the UI." }
+if ($interfaceSource -notmatch 'id="vpnDialog"' -or
+    $interfaceSource -notmatch 'function renderVpn' -or
+    $interfaceSource -notmatch 'vpnWasActive') {
+    throw "One-time VPN warning dialog is missing."
+}
+if ($updateSource -notmatch 'api\.github\.com/repos/DenisRapira/FOG-Prime/releases/latest' -or
+    $updateSource -notmatch 'IsTrustedReleaseUri' -or
+    $windowSource -notmatch 'PostAsync\("update"' -or
+    $interfaceSource -notmatch 'id="updateDialog"' -or
+    $interfaceSource -notmatch 'openUpdate') {
+    throw "Safe GitHub release update notification is incomplete."
+}
+if ($supervisorSource -notmatch 'ProfileRotation') { throw "Reserve profile rotation is missing." }
+if ($supervisorSource -notmatch 'HasExecutablePath') { throw "Engine cleanup is not scoped to this installation." }
 
 $applicationSources = Get-ChildItem (Join-Path $root "FOG.Agent"), (Join-Path $root "FOG.Protocol"), (Join-Path $root "FOG.WebView2") -Recurse -File |
     Where-Object { $_.FullName -notmatch '[\\/](bin|obj|release|publish)[\\/]' }
@@ -72,6 +142,12 @@ $forbidden = $applicationSources | Select-String -Pattern 'service\.bat|general 
 if ($forbidden) {
     $paths = ($forbidden.Path | Select-Object -Unique) -join ', '
     throw "Application source contains forbidden legacy launcher references: $paths"
+}
+
+$workflowSources = Get-ChildItem (Join-Path $root ".github\workflows") -Filter "*.yml" -File | Get-Content -Raw
+if (($workflowSources -join "`n") -match '(?m)^\s*- uses:\s+[^#\r\n]+@v\d+' -or
+    ($workflowSources -join "`n") -match 'http://|check-sig:\s*false') {
+    throw "GitHub Actions must use immutable commits and signed HTTPS dependencies."
 }
 
 if ($PackageDirectory) {
