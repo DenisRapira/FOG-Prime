@@ -1,0 +1,5 @@
+Contact: https://github.com/DenisRapira/FOG-Prime/security/advisories/new
+Policy: https://github.com/DenisRapira/FOG-Prime/blob/main/SECURITY.md
+Preferred-Languages: en, ru
+Canonical: https://denisrapira.github.io/FOG-Prime/.well-known/security.txt
+Expires: 2027-07-29T00:00:00Z
