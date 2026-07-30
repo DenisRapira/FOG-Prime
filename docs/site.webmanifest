@@ -1,7 +1,7 @@
 {
   "name": "FOG Prime",
   "short_name": "FOG Prime",
-  "description": "Windows connection diagnostics for Discord voice and YouTube.",
+  "description": "Educational Windows network diagnostics and automatic connection profiles.",
   "start_url": "/FOG-Prime/",
   "display": "browser",
   "background_color": "#ffffff",

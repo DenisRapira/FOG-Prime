@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FOG Prime - диагностика соединения Discord и YouTube для Windows</title>
-  <meta name="description" content="FOG Prime автоматически проверяет и настраивает соединение Discord и YouTube в Windows 10/11. Открытый исходный код, .NET 8, WinDivert, TLS и QUIC, без телеметрии.">
-  <meta name="keywords" content="FOG Prime, Discord Windows, YouTube Windows, диагностика сети, настройка соединения, Discord voice, WinDivert, QUIC, TLS, DNS">
+  <title>FOG Prime - образовательная сетевая диагностика для Windows</title>
+  <meta name="description" content="FOG Prime демонстрирует сетевую диагностику и автоматические профили соединения в Windows 10/11. Открытый исходный код, .NET 8, WebView2, WinDivert, DNS, TLS и QUIC, без телеметрии.">
+  <meta name="keywords" content="FOG Prime, диагностика сети Windows, образовательное приложение, профили соединения, WinDivert, .NET 8, WebView2, QUIC, TLS, DNS">
   <meta name="author" content="DenisRapira">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
   <meta name="theme-color" content="#000000">
@@ -17,9 +17,9 @@
   <meta property="og:site_name" content="FOG Prime">
   <meta property="og:locale" content="ru_RU">
   <meta property="og:title" content="FOG Prime - диагностика соединения для Windows">
-  <meta property="og:description" content="Автоматическая проверка Discord voice и YouTube в Windows 10/11 без удалённого сервера и телеметрии.">
+  <meta property="og:description" content="Образовательная сетевая диагностика Windows 10/11 с доверенным локальным Agent и без телеметрии.">
   <meta property="og:url" content="https://denisrapira.github.io/FOG-Prime/ru/">
-  <meta property="og:image" content="https://denisrapira.github.io/FOG-Prime/assets/fog-prime-app.png">
+  <meta property="og:image" content="https://denisrapira.github.io/FOG-Prime/assets/fog-prime-social-preview.png">
   <meta property="og:image:alt" content="Интерфейс FOG Prime для диагностики соединения Windows">
   <meta name="twitter:card" content="summary_large_image">
   <style>
@@ -41,9 +41,9 @@
 <body>
   <nav class="nav" aria-label="Основная навигация"><a class="brand" href="#top">FOG <span>PRIME</span></a><div class="nav-links"><a href="#features">Возможности</a><a href="#requirements">Требования</a><a href="../" lang="en">English</a><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/latest">Скачать</a></div></nav>
   <main id="top">
-    <section class="hero"><div class="hero-content"><p class="eyebrow">Открытый исходный код / Windows 10 и 11</p><h1>FOG Prime</h1><p class="lead">Автоматическая диагностика соединения Discord voice и YouTube с проверенными сетевыми профилями, работающая полностью на вашем компьютере.</p><div class="actions"><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/latest">Скачать для Windows x64</a><a class="secondary" href="https://github.com/DenisRapira/FOG-Prime">Исходный код на GitHub</a></div></div></section>
-    <section id="features" class="band"><div class="inner"><div class="status">Локальная служба готова</div><h2>Один понятный сценарий</h2><p class="intro">FOG Prime проверяет систему, выбирает ограниченный проверенный профиль соединения и подтверждает доступ. Не нужны аккаунт, подписка, удалённый прокси или телеметрия.</p><div class="feature-grid"><div class="feature"><b>Диагностика соединения</b><p>Проверка DNS, Discord Gateway/API/CDN, голосовой связи Discord, YouTube, TLS и QUIC.</p></div><div class="feature"><b>Доверенная локальная среда</b><p>Аутентификация команд UI → Agent и проверка SHA-256 каждого runtime-файла.</p></div><div class="feature"><b>Автовосстановление</b><p>Контроль Engine, повторное использование здоровой сессии и восстановление после сбоя.</p></div></div></div></section>
-    <section class="band"><div class="inner"><h2>Три этапа без ручной настройки</h2><div class="steps"><div class="step"><strong>Проверка системы</strong><p>Контроль служб Windows, целостности runtime и базовой готовности сети.</p></div><div class="step"><strong>Настройка соединения</strong><p>Выбор одного из встроенных профилей и запуск нативного Engine.</p></div><div class="step"><strong>Проверка доступа</strong><p>Стабильные health-checks и итоговый статус Discord и YouTube.</p></div></div></div></section>
+    <section class="hero"><div class="hero-content"><p class="eyebrow">Открытый исходный код / Windows 10 и 11</p><h1>FOG Prime</h1><p class="lead">Образовательная диагностика соединения с проверенными сетевыми профилями, работающая полностью на вашем компьютере.</p><div class="actions"><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/latest">Скачать для Windows x64</a><a class="secondary" href="https://github.com/DenisRapira/FOG-Prime">Исходный код на GitHub</a></div></div></section>
+    <section id="features" class="band"><div class="inner"><div class="status">Локальная служба готова</div><h2>Один понятный сценарий</h2><p class="intro">FOG Prime проверяет систему, выбирает ограниченный проверенный профиль соединения и подтверждает доступ. Не нужны аккаунт, подписка, удалённый прокси или телеметрия.</p><div class="feature-grid"><div class="feature"><b>Диагностика соединения</b><p>Проверка DNS, настроенных конечных точек, CDN-маршрутов, транспортов реального времени, TLS и QUIC.</p></div><div class="feature"><b>Доверенная локальная среда</b><p>Аутентификация команд UI → Agent и проверка SHA-256 каждого runtime-файла.</p></div><div class="feature"><b>Автовосстановление</b><p>Контроль Engine, повторное использование здоровой сессии и восстановление после сбоя.</p></div></div></div></section>
+    <section class="band"><div class="inner"><h2>Три этапа без ручной настройки</h2><div class="steps"><div class="step"><strong>Проверка системы</strong><p>Контроль служб Windows, целостности runtime и базовой готовности сети.</p></div><div class="step"><strong>Настройка соединения</strong><p>Выбор одного из встроенных профилей и запуск нативного Engine.</p></div><div class="step"><strong>Проверка доступа</strong><p>Стабильные health-checks и итоговый статус настроенных конечных точек.</p></div></div></div></section>
     <section id="requirements" class="band"><div class="inner"><h2>Системные требования</h2><table class="requirements"><tr><th>Операционная система</th><td>Windows 10 или Windows 11 x64</td></tr><tr><th>Интерфейс</th><td>Microsoft Edge WebView2 Runtime</td></tr><tr><th>Права</th><td>Доступ администратора для сетевого драйвера WinDivert</td></tr><tr><th>Компонент Windows</th><td>Работающая служба Base Filtering Engine</td></tr><tr><th>Приватность</th><td>Нет обязательного удалённого backend и встроенной телеметрии</td></tr></table></div></section>
     <section class="final"><h2>Скачайте официальную сборку</h2><p>Используйте только страницу Releases этого репозитория. Исходный код, сборка, проверки целостности и политика безопасности открыты.</p><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/latest">Открыть последний релиз</a></section>
   </main>
