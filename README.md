@@ -1,18 +1,26 @@
-# FOG Prime: Windows Connection Diagnostics for Discord and YouTube
+<div align="center">
+  <img src="docs/assets/fog-prime-social-preview.png" alt="FOG Prime - Windows, .NET, Networking" width="100%" />
 
-[![CI](https://github.com/DenisRapira/FOG-Prime/actions/workflows/ci.yml/badge.svg)](https://github.com/DenisRapira/FOG-Prime/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/DenisRapira/FOG-Prime/actions/workflows/codeql.yml/badge.svg)](https://github.com/DenisRapira/FOG-Prime/actions/workflows/codeql.yml)
-[![Release](https://img.shields.io/github/v/release/DenisRapira/FOG-Prime?display_name=tag&sort=semver)](https://github.com/DenisRapira/FOG-Prime/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/DenisRapira/FOG-Prime/total)](https://github.com/DenisRapira/FOG-Prime/releases)
-[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11&logoColor=white)](#system-requirements)
-[![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
-[![License](https://img.shields.io/github/license/DenisRapira/FOG-Prime)](LICENSE)
+  # FOG Prime
 
-**FOG Prime** is an open-source Windows network diagnostics and automatic connection-profile tool for Discord voice and YouTube. It checks DNS, TLS, QUIC and service availability, selects a constrained local profile, verifies the result, and keeps the native networking engine healthy without requiring a remote server or telemetry.
+  **Educational Windows network diagnostics and trusted local Agent/Engine architecture built with .NET 8.**
 
-**FOG Prime** - локальное приложение для Windows 10/11, которое автоматически проверяет и настраивает соединение Discord и YouTube. Интерфейс проводит пользователя через три понятных этапа: проверка системы, настройка соединения и финальная проверка доступа.
+  [![CI](https://github.com/DenisRapira/FOG-Prime/actions/workflows/ci.yml/badge.svg)](https://github.com/DenisRapira/FOG-Prime/actions/workflows/ci.yml)
+  [![CodeQL](https://github.com/DenisRapira/FOG-Prime/actions/workflows/codeql.yml/badge.svg)](https://github.com/DenisRapira/FOG-Prime/actions/workflows/codeql.yml)
+  [![Release](https://img.shields.io/github/v/release/DenisRapira/FOG-Prime?display_name=tag&sort=semver)](https://github.com/DenisRapira/FOG-Prime/releases/latest)
+  [![Downloads](https://img.shields.io/github/downloads/DenisRapira/FOG-Prime/total)](https://github.com/DenisRapira/FOG-Prime/releases)
+  [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows11&logoColor=white)](#system-requirements)
+  [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
+  [![License](https://img.shields.io/github/license/DenisRapira/FOG-Prime)](LICENSE)
+  [![Privacy](https://img.shields.io/badge/Privacy-no_telemetry-F50DB4)](#security-and-privacy)
+</div>
 
-![FOG Prime Windows network diagnostics interface](docs/assets/fog-prime-app.png)
+**FOG Prime** is an open-source educational Windows application for exploring network diagnostics, automatic connection profiles, and secure local process supervision. It checks DNS, certificate-validated TLS, QUIC and endpoint availability, selects a constrained local profile, verifies the result, and keeps the native networking engine healthy without requiring a remote server or telemetry.
+
+**FOG Prime** - образовательное open-source приложение для Windows 10/11, демонстрирующее сетевую диагностику, автоматический выбор профиля и доверенную локальную архитектуру UI / Agent / Engine. Интерфейс проводит пользователя через три понятных этапа: проверка системы, настройка соединения и финальная проверка доступности.
+
+> [!IMPORTANT]
+> FOG Prime is a local networking utility and reference implementation. It does not provide a hosted VPN, proxy endpoint, account, subscription, anonymity guarantee, or endpoint-security product.
 
 ## Download
 
@@ -28,8 +36,8 @@ Only use packages published under this repository's Releases page. Do not run in
 ## Key features
 
 - Automatic selection from a small, audited set of network profiles.
-- Discord Gateway, API, CDN and voice connectivity checks.
-- YouTube availability checks over TLS and QUIC.
+- Configured endpoint, CDN, transport and real-time connectivity checks.
+- Certificate-validated TLS and explicitly reported QUIC diagnostics.
 - DNS diagnostics without forcing a permanent system DNS change.
 - Native Windows Agent with engine supervision and automatic recovery.
 - Authenticated, current-user-only named-pipe IPC with a fixed command protocol.
@@ -86,7 +94,7 @@ Building the native Engine requires Cygwin x64 with `gcc-core`, `make`, and `zli
 
 - **The app requests administrator access:** WinDivert needs elevation to inspect and redirect the selected network traffic.
 - **The UI does not open:** install or repair Microsoft Edge WebView2 Runtime.
-- **Discord voice or YouTube is still unavailable:** close conflicting VPN/network tools, verify Windows Base Filtering Engine, then run the check again.
+- **A connectivity check still fails:** close conflicting VPN or packet-filtering tools, verify Windows Base Filtering Engine, then run the check again.
 - **The package reports an integrity error:** download a fresh archive from Releases and extract all files together.
 - **The connection stops after closing FOG Prime:** this is expected; the portable UI owns the Agent and Engine lifecycle.
 
@@ -100,7 +108,7 @@ No. FOG Prime is a local Windows networking tool. It does not provide a remote V
 
 ### Does FOG Prime collect analytics or browsing history?
 
-No built-in telemetry is included. Health checks target the documented Discord and YouTube endpoints needed to verify the selected profile.
+No built-in telemetry is included. Health checks contact only the configured public endpoints needed to verify the selected profile.
 
 ### Does it support macOS, Linux, Android or iOS?
 

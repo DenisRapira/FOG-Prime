@@ -8,7 +8,7 @@ Extract the complete release ZIP. Do not move only `FOG Prime.exe`; it requires 
 
 Check the downloaded archive properties, Windows Security history, and whether the signed WinDivert driver remains in `runtime`. Do not disable security software globally.
 
-## Discord or YouTube check fails
+## A connectivity check fails
 
 Use the retry action once so Agent can run stable checks against all allowed profiles. Temporarily disable conflicting VPN or packet-filtering applications and retry. Corporate network policy may intentionally prevent this software from operating. The latest diagnostic snapshot is stored in `%ProgramData%\FOG Prime\state.json`.
 
