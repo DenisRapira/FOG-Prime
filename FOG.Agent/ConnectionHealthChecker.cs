@@ -7,6 +7,7 @@ namespace FOG.Agent;
 
 public sealed class ConnectionHealthChecker : IDisposable
 {
+    internal static readonly TimeSpan StartupAttemptTimeout = TimeSpan.FromSeconds(2);
     private static readonly string[] GatewayHosts = { "gateway.discord.gg", "discord.com" };
     private static readonly string[] DiscordApiEndpoints =
     {
@@ -77,6 +78,45 @@ public sealed class ConnectionHealthChecker : IDisposable
         return discordResults.Concat(otherResults).ToArray();
     }
 
+    public async Task<IReadOnlyList<ProbeResult>> CheckStartupAsync(CancellationToken cancellationToken)
+    {
+        var checks = new Task<ProbeResult>[]
+        {
+            CheckOnceAsync("gateway", () => CheckTcpAttemptAsync(
+                Select(GatewayHosts, Volatile.Read(ref _gatewayOffset)),
+                443,
+                cancellationToken,
+                StartupAttemptTimeout)),
+            CheckOnceAsync("discord.com", () => CheckHttpAttemptAsync(
+                Select(DiscordApiEndpoints, Volatile.Read(ref _discordApiOffset)),
+                cancellationToken,
+                StartupAttemptTimeout)),
+            CheckOnceAsync("cdn.discordapp.com", () => CheckHttpAttemptAsync(
+                Select(DiscordCdnEndpoints, Volatile.Read(ref _discordCdnOffset)),
+                cancellationToken,
+                StartupAttemptTimeout)),
+            CheckOnceAsync("www.youtube.com", () => CheckHttpAttemptAsync(
+                Select(YouTubeEndpoints, Volatile.Read(ref _youtubeOffset)),
+                cancellationToken,
+                StartupAttemptTimeout))
+        };
+
+        var results = await Task.WhenAll(checks);
+        Interlocked.Increment(ref _gatewayOffset);
+        Interlocked.Increment(ref _discordApiOffset);
+        Interlocked.Increment(ref _discordCdnOffset);
+        Interlocked.Increment(ref _youtubeOffset);
+        return results;
+    }
+
+    private static async Task<ProbeResult> CheckOnceAsync(
+        string name,
+        Func<Task<ProbeAttempt>> attemptFactory)
+    {
+        var result = await attemptFactory();
+        return new ProbeResult(name, result.Ok, result.LatencyMs, $"{(result.Ok ? 1 : 0)}/1; {result.Detail}");
+    }
+
     private static async Task<ProbeResult> CheckStableAsync(
         string name,
         Func<int, Task<ProbeAttempt>> attemptFactory)
@@ -128,14 +168,15 @@ public sealed class ConnectionHealthChecker : IDisposable
     private static async Task<ProbeAttempt> CheckTcpAttemptAsync(
         string host,
         int port,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? timeout = null)
     {
         var watch = Stopwatch.StartNew();
         try
         {
             using var client = new TcpClient();
             await client.ConnectAsync(host, port, cancellationToken).AsTask()
-                .WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
+                .WaitAsync(timeout ?? TimeSpan.FromSeconds(3), cancellationToken);
             return new ProbeAttempt(client.Connected, (int)watch.ElapsedMilliseconds, $"{host}:{port}");
         }
         catch (Exception ex)
@@ -144,17 +185,25 @@ public sealed class ConnectionHealthChecker : IDisposable
         }
     }
 
-    private async Task<ProbeAttempt> CheckHttpAttemptAsync(string uri, CancellationToken cancellationToken)
+    private async Task<ProbeAttempt> CheckHttpAttemptAsync(
+        string uri,
+        CancellationToken cancellationToken,
+        TimeSpan? timeout = null)
     {
         var watch = Stopwatch.StartNew();
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.UserAgent.ParseAdd("FOG-Prime-Agent/1.0");
+            using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            if (timeout is { } timeoutValue)
+            {
+                timeoutSource.CancelAfter(timeoutValue);
+            }
             using var response = await _httpClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+                timeoutSource.Token);
             var status = (int)response.StatusCode;
             return new ProbeAttempt(status < 500, (int)watch.ElapsedMilliseconds, $"{new Uri(uri).Host}: HTTP {status}");
         }

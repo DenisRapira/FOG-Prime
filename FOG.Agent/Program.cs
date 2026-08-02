@@ -22,7 +22,9 @@ builder.Services.AddSingleton<INetworkAdapterSource, SystemNetworkAdapterSource>
 builder.Services.AddSingleton<ExternalTunnelDetector>();
 builder.Services.AddSingleton<DriverConflictBackoff>();
 builder.Services.AddSingleton<ProfileRotation>();
+builder.Services.AddSingleton<PreferredProfileStore>();
 builder.Services.AddSingleton<WinDivertServiceManager>();
+builder.Services.AddSingleton<EngineSessionLeaseStore>();
 builder.Services.AddSingleton<EngineSupervisor>();
 builder.Services.AddSingleton<AgentPipeServer>();
 builder.Services.AddHostedService<Worker>();

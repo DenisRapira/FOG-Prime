@@ -62,6 +62,7 @@ foreach ($profile in $profiles) {
 $pipeServerSource = Get-Content (Join-Path $root "FOG.Agent\AgentPipeServer.cs") -Raw
 $supervisorSource = Get-Content (Join-Path $root "FOG.Agent\EngineSupervisor.cs") -Raw
 $healthSource = Get-Content (Join-Path $root "FOG.Agent\ConnectionHealthChecker.cs") -Raw
+$preferredProfileSource = Get-Content (Join-Path $root "FOG.Agent\PreferredProfileStore.cs") -Raw
 $windowSource = Get-Content (Join-Path $root "FOG.WebView2\MainWindow.xaml.cs") -Raw
 $interfaceSource = Get-Content (Join-Path $root "FOG.WebView2\wwwroot\index.html") -Raw
 $updateSource = Get-Content (Join-Path $root "FOG.WebView2\UpdateChecker.cs") -Raw
@@ -72,6 +73,7 @@ $integritySource = Get-Content (Join-Path $root "FOG.Agent\RuntimeIntegrityVerif
 $agentProjectSource = Get-Content (Join-Path $root "FOG.Agent\FOG.Agent.csproj") -Raw
 $uiProjectSource = Get-Content (Join-Path $root "FOG.WebView2\FOG.WebView2.csproj") -Raw
 $packageSource = Get-Content (Join-Path $root "build\package.ps1") -Raw
+$leaseSource = Get-Content (Join-Path $root "FOG.Agent\EngineSessionLeaseStore.cs") -Raw
 if ($pipeServerSource -notmatch '"shutdown"\s*=>') { throw "Agent shutdown command is missing." }
 if ($protocolSource -notmatch 'fog-prime-agent-v3' -or
     $protocolSource -notmatch 'SessionToken') {
@@ -97,13 +99,33 @@ if ($integritySource -notmatch 'TrustedRuntimeManifest\.json' -or
     throw "Embedded runtime trust validation is missing."
 }
 if ($agentProjectSource -notmatch 'FogRuntimeManifestPath' -or
+    $agentProjectSource -notmatch 'FogProfilesPath' -or
     $uiProjectSource -notmatch 'FogAgentHashPath' -or
     $packageSource -notmatch 'trusted-agent\.sha256' -or
+    $packageSource -notmatch 'FogProfilesPath' -or
     $packageSource -notmatch 'NuGetLockFilePath=obj\\publish-win-x64\.packages\.lock\.json') {
     throw "Package trust chain is incomplete."
 }
+if ($leaseSource -notmatch 'HMACSHA256' -or
+    $leaseSource -notmatch 'FixedTimeEquals' -or
+    $supervisorSource -notmatch 'TryAdoptSessionEngine') {
+    throw "Authenticated Engine session recovery is incomplete."
+}
+if ($supervisorSource -match 'RedirectStandard(Output|Error)\s*=\s*true' -or
+    $supervisorSource -match 'Begin(Output|Error)ReadLine') {
+    throw "FOG Engine must not depend on Agent-owned output pipes during session recovery."
+}
 if ($supervisorSource -notmatch 'RecoverIfNeededAsync') { throw "Automatic Engine recovery is missing." }
-if ($supervisorSource -notmatch 'ShouldRotateProfile' -or
+if ($healthSource -notmatch 'CheckStartupAsync' -or
+    $healthSource -notmatch 'StartupAttemptTimeout\s*=\s*TimeSpan\.FromSeconds\(2\)' -or
+    $supervisorSource -notmatch 'LoadPreferredProfile' -or
+    $supervisorSource -notmatch 'RememberSuccessfulProfile' -or
+    $preferredProfileSource -notmatch 'preferred-profile\.json' -or
+    $preferredProfileSource -notmatch 'File\.Move\(temporaryPath, _path, overwrite: true\)') {
+    throw "Fast remembered profile selection is incomplete."
+}
+if ($supervisorSource -notmatch 'ShouldRotateAtStartup' -or
+    $supervisorSource -notmatch 'preserving the active session' -or
     $supervisorSource -match '\-\-wf-raw' -or
     $supervisorSource -notmatch 'WaitAsync\(0, cancellationToken\)') {
     throw "Engine recovery must preserve a running validated profile and its native filter arguments."
@@ -164,6 +186,7 @@ if ($PackageDirectory) {
         "THIRD_PARTY_NOTICES.md",
         "UPSTREAM.md"
     )
+
     foreach ($relative in $required) {
         if (-not (Test-Path (Join-Path $package $relative))) { throw "Package file is missing: $relative" }
     }

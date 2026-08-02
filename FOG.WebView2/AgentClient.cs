@@ -109,7 +109,7 @@ internal sealed class AgentClient
             {
                 if (_spawnedAgent.HasExited)
                 {
-                    DiagnosticLog.Write("UI", $"Agent exited during startup; code={_spawnedAgent.ExitCode}");
+                    DiagnosticLog.Write("UI", $"Agent exited during startup; code={FormatExitCode(_spawnedAgent.ExitCode)}");
                     throw new InvalidOperationException($"FOG Prime Agent exited with code {_spawnedAgent.ExitCode}.");
                 }
 
@@ -234,7 +234,7 @@ internal sealed class AgentClient
                 DiagnosticLog.Write("Agent", eventArgs.Data);
             }
         };
-        process.Exited += (_, _) => DiagnosticLog.Write("UI", $"Agent process exited; code={TryGetExitCode(process)}");
+        process.Exited += (_, _) => DiagnosticLog.Write("UI", $"Agent process exited; code={FormatExitCode(TryGetExitCode(process))}");
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
     }
@@ -249,6 +249,13 @@ internal sealed class AgentClient
         {
             return null;
         }
+    }
+
+    private static string FormatExitCode(int? exitCode)
+    {
+        return exitCode is int code
+            ? $"{code} (0x{unchecked((uint)code):X8})"
+            : "unavailable";
     }
 
     private static async Task VerifyAgentIntegrityAsync(string agentPath, CancellationToken cancellationToken)

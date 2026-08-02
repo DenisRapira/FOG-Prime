@@ -4,6 +4,7 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <FogProfilesPath Condition="'$(FogProfilesPath)' == ''">$(MSBuildProjectDirectory)\profiles.json</FogProfilesPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +20,7 @@
   <ItemGroup>
     <None Remove="profiles.json" />
     <None Remove="runtime.manifest.json" />
-    <EmbeddedResource Include="profiles.json" LogicalName="FOG.Agent.TrustedProfiles.json" />
+    <EmbeddedResource Include="$(FogProfilesPath)" LogicalName="FOG.Agent.TrustedProfiles.json" />
     <EmbeddedResource Include="$(FogRuntimeManifestPath)" LogicalName="FOG.Agent.TrustedRuntimeManifest.json" Condition="'$(FogRuntimeManifestPath)' != ''" />
   </ItemGroup>
 </Project>

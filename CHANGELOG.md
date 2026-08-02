@@ -13,6 +13,25 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Minimal WebView2 user interface.
 - Reproducible GitHub Actions build and release workflows.
 
+## [0.1.8] - 2026-08-03
+
+- Remembers the last profile that passed Discord and YouTube readiness checks,
+  tries it first on the next launch, and replaces it automatically when it no
+  longer works.
+- Reduced the startup readiness window to a single parallel check bounded to
+  two seconds per profile, cutting the full reserve cycle to about eight seconds.
+- Separated startup readiness from long-session health so an unusable initial
+  profile rotates quickly while transient background probes never restart a
+  working Discord voice session.
+- Added authenticated Engine session adoption after an unexpected Agent restart,
+  without tying the Engine lifetime to Agent-owned output pipes.
+- Added precise PID, profile, uptime, and hexadecimal exit-code diagnostics with
+  deduplicated tunnel and probe logging.
+- Simplified connection-state wording and retained automatic VPN/EAC handling,
+  package integrity checks, and clean close behavior.
+- Expanded automated coverage to 25 compatibility, persistence, recovery, and
+  startup-policy tests plus package tamper and EAC lifecycle tests.
+
 ## [0.1.7] - 2026-07-22
 
 - Fixed a regression that could report a normal connection as ready and skip

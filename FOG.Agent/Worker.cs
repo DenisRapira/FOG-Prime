@@ -44,7 +44,7 @@ public sealed class Worker(
                 logger.LogError(ex, "Compatibility reconciliation failed");
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
         }
     }
 
@@ -57,8 +57,10 @@ public sealed class Worker(
             {
                 var snapshot = await supervisor.RecoverIfNeededAsync(cancellationToken);
                 await stateStore.SaveAsync(snapshot, cancellationToken);
-                RememberState(snapshot);
-                LogSnapshot("health refresh", snapshot);
+                if (HasStateChanged(snapshot))
+                {
+                    LogSnapshot("health changed", snapshot);
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -83,14 +85,6 @@ public sealed class Worker(
 
             _lastStateSignature = signature;
             return true;
-        }
-    }
-
-    private void RememberState(AgentSnapshot snapshot)
-    {
-        lock (_stateSync)
-        {
-            _lastStateSignature = GetStateSignature(snapshot);
         }
     }
 

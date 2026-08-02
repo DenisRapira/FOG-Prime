@@ -148,7 +148,7 @@ try {
     Write-Host "PASS: modified runtime.manifest.json rejected"
 
     $runtimeTamper = New-TestPackage "runtime-tamper"
-    Add-Content -LiteralPath (Join-Path $runtimeTamper "runtime\voice_decoy_quic.bin") -Value "tamper"
+    Add-Content -LiteralPath (Join-Path $runtimeTamper "runtime\WinDivert.dll") -Value "tamper"
     Assert-AgentRejectsStartup $runtimeTamper "Modified runtime file"
     Write-Host "PASS: modified runtime file rejected"
 

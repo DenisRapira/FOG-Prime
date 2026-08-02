@@ -1,4 +1,8 @@
 using FOG.Agent;
+using Microsoft.Extensions.Logging.Abstractions;
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text.Json.Nodes;
 
 if (args is ["--check-update", var currentVersion])
 {
@@ -26,6 +30,11 @@ var tests = new (string Name, Action Run)[]
     ("detects newer GitHub release versions", AssertReleaseVersionComparison),
     ("rejects untrusted release links", AssertReleaseLinkValidation),
     ("keeps a running profile during degraded probes", AssertDegradedProbePolicy),
+    ("rotates a degraded profile during startup", AssertStartupReadinessPolicy),
+    ("keeps a profile stable through a long session", AssertLongSessionStability),
+    ("authenticates a recovered Engine session", AssertEngineSessionLease),
+    ("persists the last working profile", AssertPreferredProfilePersistence),
+    ("bounds the fast startup probe", AssertFastStartupProbe),
     ("rotates failed connection profiles", AssertProfileRotation),
     ("applies bounded driver backoff", AssertDriverBackoff),
     ("resets driver backoff after recovery", AssertDriverBackoffReset),
@@ -197,6 +206,121 @@ static void AssertDegradedProbePolicy()
     var degraded = new[] { new FOG.Protocol.ProbeResult("gateway", false, 5000, "timeout") };
     Assert(!TransportPolicy.ShouldRotateProfile(true, degraded), "A live Engine was selected for restart after a probe timeout.");
     Assert(TransportPolicy.ShouldRotateProfile(false, degraded), "A terminated Engine was not selected for profile recovery.");
+}
+
+static void AssertStartupReadinessPolicy()
+{
+    var healthy = new[] { new FOG.Protocol.ProbeResult("gateway", true, 40, "ok") };
+    var degraded = new[] { new FOG.Protocol.ProbeResult("discord.com", false, 3000, "timeout") };
+    Assert(!TransportPolicy.ShouldRotateAtStartup(true, healthy), "A ready startup profile was selected for rotation.");
+    Assert(TransportPolicy.ShouldRotateAtStartup(true, degraded), "A degraded startup profile blocked reserve selection.");
+    Assert(TransportPolicy.ShouldRotateAtStartup(false, healthy), "A terminated startup profile was accepted.");
+}
+
+static void AssertLongSessionStability()
+{
+    var profiles = new[]
+    {
+        new FOG.Protocol.EngineProfile("primary", 10, "FOG.Engine.exe", new[] { "a" }),
+        new FOG.Protocol.EngineProfile("reserve", 20, "FOG.Engine.exe", new[] { "b" })
+    };
+    var rotation = new ProfileRotation();
+
+    for (var check = 0; check < 10_000; check++)
+    {
+        var probe = new[]
+        {
+            new FOG.Protocol.ProbeResult(
+                "gateway",
+                check % 7 != 0,
+                check % 7 == 0 ? 5000 : 40,
+                check % 7 == 0 ? "timeout" : "ok")
+        };
+        if (TransportPolicy.ShouldRotateProfile(true, probe))
+        {
+            rotation.MovePast("primary", profiles);
+        }
+    }
+
+    Assert(rotation.Order(profiles)[0].Id == "primary", "Transient probes changed the active profile during a long session.");
+
+    var terminated = new[] { new FOG.Protocol.ProbeResult("gateway", false, 0, "engine-exited") };
+    if (TransportPolicy.ShouldRotateProfile(false, terminated))
+    {
+        rotation.MovePast("primary", profiles);
+    }
+
+    Assert(rotation.Order(profiles)[0].Id == "reserve", "An actual Engine exit did not select the reserve profile.");
+}
+
+static void AssertEngineSessionLease()
+{
+    var directory = Path.Combine(Path.GetTempPath(), $"fog-lease-test-{Guid.NewGuid():N}");
+    var leasePath = Path.Combine(directory, "engine-session.json");
+    try
+    {
+        var key = RandomNumberGenerator.GetBytes(32);
+        var store = new EngineSessionLeaseStore(
+            leasePath,
+            key,
+            NullLogger<EngineSessionLeaseStore>.Instance);
+        using var process = Process.GetCurrentProcess();
+        var executable = Environment.ProcessPath ?? process.MainModule?.FileName
+            ?? throw new InvalidOperationException("The test process path is unavailable.");
+
+        store.Save(process, "fog2-balanced", executable);
+        var lease = store.TryLoad()
+            ?? throw new InvalidOperationException("A valid Engine session lease was rejected.");
+        Assert(lease.ProcessId == process.Id, "The recovered Engine PID changed.");
+        Assert(lease.ProfileId == "fog2-balanced", "The recovered Engine profile changed.");
+
+        var tampered = JsonNode.Parse(File.ReadAllText(leasePath))?.AsObject()
+            ?? throw new InvalidOperationException("The Engine session lease is invalid JSON.");
+        tampered["profileId"] = "fog2-compat";
+        File.WriteAllText(leasePath, tampered.ToJsonString());
+        Assert(store.TryLoad() is null, "A tampered Engine session lease was accepted.");
+        Assert(!File.Exists(leasePath), "A tampered Engine session lease was not removed.");
+    }
+    finally
+    {
+        if (Directory.Exists(directory))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+}
+
+static void AssertPreferredProfilePersistence()
+{
+    var directory = Path.Combine(Path.GetTempPath(), $"fog-profile-test-{Guid.NewGuid():N}");
+    var path = Path.Combine(directory, "preferred-profile.json");
+    try
+    {
+        var store = new PreferredProfileStore(path, NullLogger<PreferredProfileStore>.Instance);
+        store.Save("discord-adaptive-tls");
+
+        var reloaded = new PreferredProfileStore(path, NullLogger<PreferredProfileStore>.Instance).TryLoad();
+        Assert(reloaded?.ProfileId == "discord-adaptive-tls", "The working profile was not restored after restart.");
+
+        store.Save("fog-voice-prime");
+        Assert(store.TryLoad()?.ProfileId == "fog-voice-prime", "A newly working profile did not replace the old preference.");
+        store.Clear();
+        Assert(store.TryLoad() is null, "A failed preferred profile was not cleared.");
+    }
+    finally
+    {
+        if (Directory.Exists(directory))
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+}
+
+static void AssertFastStartupProbe()
+{
+    Assert(
+        ConnectionHealthChecker.StartupAttemptTimeout <= TimeSpan.FromSeconds(2),
+        "The startup probe can still block profile selection for too long.");
 }
 
 static void AssertProfileRotation()

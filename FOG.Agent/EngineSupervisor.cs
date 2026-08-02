@@ -14,7 +14,9 @@ public sealed class EngineSupervisor(
     ExternalTunnelDetector tunnelDetector,
     DriverConflictBackoff driverBackoff,
     ProfileRotation profileRotation,
+    PreferredProfileStore preferredProfileStore,
     WinDivertServiceManager winDivertService,
+    EngineSessionLeaseStore sessionLeaseStore,
     ILogger<EngineSupervisor> logger)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -36,6 +38,11 @@ public sealed class EngineSupervisor(
     private bool _directMode;
     private bool _waitingForTunnel;
     private volatile bool _desiredRunning;
+    private string? _lastTunnelLogSignature;
+    private string? _lastProbeLogSignature;
+    private DateTimeOffset _lastProbeLogAt;
+    private bool _preferredProfileLoaded;
+    private string? _rememberedProfileId;
 
     public async Task<AgentSnapshot> StartBestAsync(CancellationToken cancellationToken)
     {
@@ -44,11 +51,17 @@ public sealed class EngineSupervisor(
         {
             _desiredRunning = true;
             driverBackoff.Reset();
+            if (IsRunning)
+            {
+                logger.LogInformation("FOG Engine is already running; preserving the active session");
+                return await RefreshHealthInternalAsync(cancellationToken);
+            }
+
             var tunnel = tunnelDetector.FindActiveTunnel();
             LogTunnelInfo(tunnel, nameof(StartBestAsync));
             if (TransportPolicy.ShouldProbeBeforeEngine(tunnel))
             {
-                _lastProbes = await healthChecker.CheckAsync(cancellationToken);
+                _lastProbes = await healthChecker.CheckStartupAsync(cancellationToken);
                 LogProbeResults(_lastProbes, nameof(StartBestAsync));
                 if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes))
                 {
@@ -107,7 +120,6 @@ public sealed class EngineSupervisor(
 
         try
         {
-            UpdateCompatibility(tunnelDetector.FindActiveTunnel());
             return CreateSnapshot(CurrentState);
         }
         finally
@@ -302,6 +314,10 @@ public sealed class EngineSupervisor(
         if (_lastProbes.All(probe => probe.Ok))
         {
             driverBackoff.Reset();
+            if (_activeProfile is { } activeProfile)
+            {
+                RememberSuccessfulProfile(activeProfile.Id);
+            }
             UpdateCompatibility();
             return CreateSnapshot("ready");
         }
@@ -319,9 +335,25 @@ public sealed class EngineSupervisor(
         }
 
         await integrityVerifier.VerifyAsync(cancellationToken);
+        if (TryAdoptSessionEngine() is { } adoptedProfile)
+        {
+            profileRotation.Prefer(adoptedProfile.Id);
+            CreateSnapshot("recovering");
+            _lastProbes = await healthChecker.CheckStartupAsync(cancellationToken);
+            UpdateCompatibility();
+            if (_lastProbes.All(probe => probe.Ok))
+            {
+                RememberSuccessfulProfile(adoptedProfile.Id);
+                return CreateSnapshot("ready");
+            }
+
+            return CreateSnapshot("degraded");
+        }
+
         await StopStaleEnginesAsync(cancellationToken);
         await winDivertService.StopOwnedAsync(cancellationToken);
 
+        LoadPreferredProfile();
         var orderedProfiles = profileRotation.Order(catalog.All);
         foreach (var profile in orderedProfiles)
         {
@@ -333,7 +365,7 @@ public sealed class EngineSupervisor(
             }
 
             StartProfile(profile);
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            await Task.Delay(TimeSpan.FromMilliseconds(650), cancellationToken);
             if (await DeferToActiveTunnelAsync(cancellationToken) is { } activatedTunnelSnapshot)
             {
                 return activatedTunnelSnapshot;
@@ -341,6 +373,7 @@ public sealed class EngineSupervisor(
 
             if (!IsRunning)
             {
+                ForgetPreferredProfile(profile.Id);
                 profileRotation.MovePast(profile.Id, catalog.All);
                 if (driverBackoff.TryGetActivePause(DateTimeOffset.UtcNow, out _))
                 {
@@ -354,19 +387,31 @@ public sealed class EngineSupervisor(
             _activeProfile = profile;
             profileRotation.Prefer(profile.Id);
             CreateSnapshot("recovering");
-            _lastProbes = await healthChecker.CheckAsync(cancellationToken);
+            _lastProbes = await healthChecker.CheckStartupAsync(cancellationToken);
             if (await DeferToActiveTunnelAsync(cancellationToken) is { } probedTunnelSnapshot)
             {
                 return probedTunnelSnapshot;
             }
 
-            if (!TransportPolicy.ShouldRotateProfile(IsRunning, _lastProbes))
+            if (!TransportPolicy.ShouldRotateAtStartup(IsRunning, _lastProbes))
             {
+                RememberSuccessfulProfile(profile.Id);
                 UpdateCompatibility();
-                return CreateSnapshot(_lastProbes.All(probe => probe.Ok) ? "ready" : "degraded");
+                return CreateSnapshot("ready");
             }
 
+            ForgetPreferredProfile(profile.Id);
+            logger.LogWarning(
+                "Profile {ProfileId} did not pass startup readiness; trying the next reserve profile",
+                profile.Id);
             profileRotation.MovePast(profile.Id, catalog.All);
+        }
+
+        if (IsRunning)
+        {
+            logger.LogWarning("All profiles are degraded; keeping the last live Engine active for manual verification");
+            UpdateCompatibility();
+            return CreateSnapshot("degraded");
         }
 
         await StopInternalAsync(cancellationToken);
@@ -426,6 +471,15 @@ public sealed class EngineSupervisor(
 
     private void LogTunnelInfo(NetworkAdapterInfo? tunnel, string source)
     {
+        var signature = tunnel is null
+            ? "none"
+            : $"{tunnel.Name}|{tunnel.Description}|{tunnel.Type}|{tunnel.Status}";
+        if (string.Equals(signature, _lastTunnelLogSignature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _lastTunnelLogSignature = signature;
         if (tunnel is null)
         {
             logger.LogInformation("{Source}: no external tunnel detected", source);
@@ -443,6 +497,18 @@ public sealed class EngineSupervisor(
 
     private void LogProbeResults(IReadOnlyCollection<ProbeResult> probes, string source)
     {
+        var now = DateTimeOffset.UtcNow;
+        var signature = probes.Count == 0
+            ? "none"
+            : string.Join('|', probes.Select(probe => $"{probe.Name}:{probe.Ok}:{probe.Detail}"));
+        if (string.Equals(signature, _lastProbeLogSignature, StringComparison.Ordinal) &&
+            now - _lastProbeLogAt < TimeSpan.FromMinutes(2))
+        {
+            return;
+        }
+
+        _lastProbeLogSignature = signature;
+        _lastProbeLogAt = now;
         if (probes.Count == 0)
         {
             logger.LogInformation("{Source}: no probe results available", source);
@@ -471,9 +537,7 @@ public sealed class EngineSupervisor(
             FileName = executable,
             WorkingDirectory = runtimeDirectory,
             UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true
+            CreateNoWindow = true
         };
 
         foreach (var argument in profile.Arguments)
@@ -488,51 +552,120 @@ public sealed class EngineSupervisor(
             executable);
 
         var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Engine process could not be created.");
-        var instance = new EngineInstance(process, profile.Id);
-        _engine = instance;
-        process.EnableRaisingEvents = true;
-        process.OutputDataReceived += (_, eventArgs) =>
+        var instance = new EngineInstance(
+            process,
+            profile.Id,
+            new DateTimeOffset(process.StartTime.ToUniversalTime()));
+        AttachEngine(instance, profile);
+        sessionLeaseStore.Save(process, profile.Id, executable);
+        logger.LogInformation(
+            "FOG Engine started; pid={ProcessId}; profile={ProfileId}",
+            process.Id,
+            profile.Id);
+    }
+
+    private EngineProfile? TryAdoptSessionEngine()
+    {
+        var lease = sessionLeaseStore.TryLoad();
+        if (lease is null)
         {
-            if (!string.IsNullOrWhiteSpace(eventArgs.Data))
-            {
-                logger.LogDebug("FOG Engine: {Message}", eventArgs.Data);
-            }
-        };
-        process.ErrorDataReceived += (_, eventArgs) =>
+            return null;
+        }
+
+        var profile = catalog.All.FirstOrDefault(candidate =>
+            candidate.Id.Equals(lease.ProfileId, StringComparison.OrdinalIgnoreCase));
+        var runtimeDirectory = options.Value.ResolveFromBase(options.Value.RuntimeDirectory);
+        var expectedPath = profile is null
+            ? null
+            : Path.GetFullPath(Path.Combine(runtimeDirectory, profile.Executable));
+        if (profile is null ||
+            expectedPath is null ||
+            !expectedPath.Equals(Path.GetFullPath(lease.ExecutablePath), StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrWhiteSpace(eventArgs.Data))
+            sessionLeaseStore.Clear(lease.ProcessId);
+            return null;
+        }
+
+        try
+        {
+            var process = Process.GetProcessById(lease.ProcessId);
+            var processStart = process.StartTime.ToUniversalTime().Ticks;
+            if (process.HasExited ||
+                Math.Abs(processStart - lease.ProcessStartUtcTicks) > TimeSpan.FromSeconds(2).Ticks ||
+                !HasExecutablePath(process, expectedPath))
             {
-                return;
+                process.Dispose();
+                sessionLeaseStore.Clear(lease.ProcessId);
+                profileRotation.MovePast(profile.Id, catalog.All);
+                return null;
             }
 
-            logger.LogWarning("FOG Engine: {Message}", eventArgs.Data);
-            if (eventArgs.Data.Contains("windivert: recv failed", StringComparison.OrdinalIgnoreCase))
-            {
-                RecordDriverConflict(instance, "WinDivert receive failure");
-            }
-        };
+            var instance = new EngineInstance(
+                process,
+                profile.Id,
+                new DateTimeOffset(new DateTime(processStart, DateTimeKind.Utc)));
+            AttachEngine(instance, profile);
+            logger.LogInformation(
+                "Adopted running FOG Engine after Agent recovery; pid={ProcessId}; profile={ProfileId}; uptime={UptimeMs}ms",
+                process.Id,
+                profile.Id,
+                (long)(DateTimeOffset.UtcNow - instance.StartedAt).TotalMilliseconds);
+            return profile;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or Win32Exception or NotSupportedException)
+        {
+            sessionLeaseStore.Clear(lease.ProcessId);
+            profileRotation.MovePast(profile.Id, catalog.All);
+            logger.LogWarning(ex, "Previous Engine session could not be adopted; a reserve profile will be used");
+            return null;
+        }
+    }
+
+    private void AttachEngine(EngineInstance instance, EngineProfile profile)
+    {
+        var process = instance.Process;
+        _engine = instance;
+        _activeProfile = profile;
+        process.EnableRaisingEvents = true;
         process.Exited += (_, _) =>
         {
+            sessionLeaseStore.Clear(process.Id);
             var code = TryGetExitCode(process);
+            var uptime = DateTimeOffset.UtcNow - instance.StartedAt;
             if (instance.StopRequested)
             {
-                logger.LogDebug("FOG Engine stopped with code {ExitCode}", code);
+                logger.LogDebug(
+                    "FOG Engine stopped; pid={ProcessId}; profile={ProfileId}; exit={ExitCode} ({ExitCodeHex}); uptime={UptimeMs}ms",
+                    process.Id,
+                    instance.ProfileId,
+                    code,
+                    FormatExitCode(code),
+                    (long)uptime.TotalMilliseconds);
             }
             else if (code == 232)
             {
-                logger.LogWarning("FOG Engine exited with WinDivert code {ExitCode}", code);
+                logger.LogWarning(
+                    "FOG Engine exited with WinDivert failure; pid={ProcessId}; profile={ProfileId}; exit={ExitCode} ({ExitCodeHex}); uptime={UptimeMs}ms",
+                    process.Id,
+                    instance.ProfileId,
+                    code,
+                    FormatExitCode(code),
+                    (long)uptime.TotalMilliseconds);
                 RecordDriverConflict(instance, "WinDivert exit code 232");
             }
             else
             {
-                logger.LogWarning("FOG Engine exited unexpectedly with code {ExitCode}", code);
+                ForgetPreferredProfile(instance.ProfileId);
+                logger.LogWarning(
+                    "FOG Engine exited unexpectedly; pid={ProcessId}; profile={ProfileId}; exit={ExitCode} ({ExitCodeHex}); uptime={UptimeMs}ms",
+                    process.Id,
+                    instance.ProfileId,
+                    code,
+                    FormatExitCode(code),
+                    (long)uptime.TotalMilliseconds);
                 profileRotation.MovePast(instance.ProfileId, catalog.All);
             }
         };
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        _activeProfile = profile;
-        logger.LogInformation("FOG Engine started with profile {ProfileId}", profile.Id);
     }
 
     private void RecordDriverConflict(EngineInstance instance, string source)
@@ -543,6 +676,7 @@ public sealed class EngineSupervisor(
         }
 
         var retryAt = driverBackoff.RecordFailure(DateTimeOffset.UtcNow);
+        ForgetPreferredProfile(instance.ProfileId);
         profileRotation.MovePast(instance.ProfileId, catalog.All);
         logger.LogWarning("{Source}; automatic retry scheduled for {RetryAt}", source, retryAt);
     }
@@ -553,6 +687,7 @@ public sealed class EngineSupervisor(
         if (instance is not null)
         {
             instance.StopRequested = true;
+            sessionLeaseStore.Clear(instance.Process.Id);
         }
 
         _engine = null;
@@ -630,6 +765,61 @@ public sealed class EngineSupervisor(
         }
     }
 
+    private void LoadPreferredProfile()
+    {
+        if (_preferredProfileLoaded)
+        {
+            return;
+        }
+
+        _preferredProfileLoaded = true;
+        var state = preferredProfileStore.TryLoad();
+        var profile = state is null
+            ? null
+            : catalog.All.FirstOrDefault(candidate =>
+                candidate.Id.Equals(state.ProfileId, StringComparison.OrdinalIgnoreCase));
+        if (profile is null)
+        {
+            if (state is not null)
+            {
+                preferredProfileStore.Clear();
+            }
+            return;
+        }
+
+        _rememberedProfileId = profile.Id;
+        profileRotation.Prefer(profile.Id);
+        logger.LogInformation(
+            "Using remembered profile {ProfileId}; last verified at {VerifiedAt}",
+            profile.Id,
+            state!.VerifiedAt);
+    }
+
+    private void RememberSuccessfulProfile(string profileId)
+    {
+        if (string.Equals(_rememberedProfileId, profileId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        preferredProfileStore.Save(profileId);
+        _rememberedProfileId = profileId;
+        _preferredProfileLoaded = true;
+        logger.LogInformation("Remembered working profile {ProfileId} for the next launch", profileId);
+    }
+
+    private void ForgetPreferredProfile(string profileId)
+    {
+        if (!string.Equals(_rememberedProfileId, profileId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        preferredProfileStore.Clear();
+        _rememberedProfileId = null;
+        logger.LogInformation("Remembered profile {ProfileId} is no longer ready; reserve selection is enabled", profileId);
+    }
+
     private AgentSnapshot CreateSnapshot(string state)
     {
         var snapshot = new AgentSnapshot(
@@ -683,15 +873,19 @@ public sealed class EngineSupervisor(
         }
     }
 
+    private static string FormatExitCode(int? exitCode) =>
+        exitCode is { } value ? $"0x{unchecked((uint)value):X8}" : "unknown";
+
     private static string ExpandRuntimePath(string value, string runtimeDirectory)
     {
         return value.Replace("${runtime}", runtimeDirectory, StringComparison.OrdinalIgnoreCase);
     }
 
-    private sealed class EngineInstance(Process process, string profileId)
+    private sealed class EngineInstance(Process process, string profileId, DateTimeOffset startedAt)
     {
         public Process Process { get; } = process;
         public string ProfileId { get; } = profileId;
+        public DateTimeOffset StartedAt { get; } = startedAt;
         public volatile bool StopRequested;
         public int DriverConflictRecorded;
     }

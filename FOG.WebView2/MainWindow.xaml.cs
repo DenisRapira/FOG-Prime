@@ -284,14 +284,14 @@ public partial class MainWindow : Window
 
         await PostAsync("prime", new PrimePayload(
             engineActive ? "checking" : "recovering",
-            tunnelActive ? "Ждем соединение" : "Восстанавливаем связь",
+            tunnelActive ? "Проверяем соединение" : "Подключаем",
             tunnelActive
-                ? "VPN активен. FOG не запускает сетевой драйвер и продолжает проверку."
+                ? "Проверяем доступ через активное подключение."
                 : engineActive
-                ? "FOG запущен. Проверяем качество связи, не прерывая рабочий режим."
+                ? "Проверяем доступ. Обычно это занимает несколько секунд."
                 : snapshot?.State == "recovering"
-                ? "Запускаем резервный вариант автоматически."
-                : "Проверяем соединение.",
+                ? "Подбираем рабочее подключение."
+                : "Почти готово.",
             72,
             diagnostics,
             checks));
@@ -301,7 +301,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var currentVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.1.7";
+            var currentVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.1.8";
             var update = await _updateChecker.CheckAsync(currentVersion, cancellationToken);
             if (update is null)
             {

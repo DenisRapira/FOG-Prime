@@ -21,11 +21,17 @@ public static class TransportPolicy
         bool engineRunning,
         IReadOnlyCollection<ProbeResult> probes)
     {
-        if (!engineRunning)
-        {
-            return true;
-        }
+        // Connectivity probes describe the control plane, not an active Discord
+        // media session. A live Engine must only be replaced after it exits.
+        return !engineRunning;
+    }
 
-        return probes.Count > 0 && !probes.All(probe => probe.Ok);
+    public static bool ShouldRotateAtStartup(
+        bool engineRunning,
+        IReadOnlyCollection<ProbeResult> probes)
+    {
+        return !engineRunning ||
+            probes.Count == 0 ||
+            probes.Any(probe => !probe.Ok);
     }
 }
