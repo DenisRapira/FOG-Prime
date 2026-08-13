@@ -62,6 +62,7 @@ foreach ($profile in $profiles) {
 $pipeServerSource = Get-Content (Join-Path $root "FOG.Agent\AgentPipeServer.cs") -Raw
 $supervisorSource = Get-Content (Join-Path $root "FOG.Agent\EngineSupervisor.cs") -Raw
 $healthSource = Get-Content (Join-Path $root "FOG.Agent\ConnectionHealthChecker.cs") -Raw
+$transportPolicySource = Get-Content (Join-Path $root "FOG.Agent\TransportPolicy.cs") -Raw
 $preferredProfileSource = Get-Content (Join-Path $root "FOG.Agent\PreferredProfileStore.cs") -Raw
 $windowSource = Get-Content (Join-Path $root "FOG.WebView2\MainWindow.xaml.cs") -Raw
 $interfaceSource = Get-Content (Join-Path $root "FOG.WebView2\wwwroot\index.html") -Raw
@@ -124,7 +125,14 @@ if ($healthSource -notmatch 'CheckStartupAsync' -or
     $preferredProfileSource -notmatch 'File\.Move\(temporaryPath, _path, overwrite: true\)') {
     throw "Fast remembered profile selection is incomplete."
 }
-if ($supervisorSource -notmatch 'ShouldRotateAtStartup' -or
+if ($supervisorSource -notmatch 'MarkStartupQualificationPending' -or
+    $supervisorSource -notmatch 'ApplyEngineProbeResultsAsync' -or
+    $supervisorSource -notmatch 'IsStartupQualificationDue' -or
+    $supervisorSource -notmatch '_nextStartupQualificationAt\s*=\s*DateTimeOffset\.UtcNow\s*\+\s*TransportPolicy\.InitialHealthInterval' -or
+    $supervisorSource -notmatch 'readiness qualification will continue in the background' -or
+    $transportPolicySource -notmatch 'EngineLaunchSettleDelay\s*=\s*TimeSpan\.FromMilliseconds\(300\)' -or
+    $transportPolicySource -notmatch 'consecutiveFailures\s*>=\s*2' -or
+    $transportPolicySource -notmatch 'attemptedProfiles\s*<\s*totalProfiles' -or
     $supervisorSource -notmatch 'preserving the active session' -or
     $supervisorSource -match '\-\-wf-raw' -or
     $supervisorSource -notmatch 'WaitAsync\(0, cancellationToken\)') {

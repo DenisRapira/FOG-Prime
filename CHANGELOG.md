@@ -6,6 +6,10 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [0.1.9] - 2026-08-13
 
+- Starts FOG Engine before network qualification completes, returning control
+  after a 300 ms process-settle window instead of blocking on remote probes.
+- Qualifies the active profile in the background, requires two failed checks
+  before switching, and tries each reserve profile at most once per startup.
 - Fixed automatic recovery after an external VPN is disconnected while its
   process or virtual adapter remains present in Windows.
 - Added tunnel topology fingerprints and fast direct-mode checks so FOG can
@@ -16,8 +20,8 @@ All notable changes are documented here. This project follows Semantic Versionin
   after three consecutive authenticated IPC failures.
 - Increased VPN transition monitoring frequency while retaining a quiet
   20-second health interval for stable Engine sessions.
-- Updated Microsoft WebView2 and pinned GitHub Actions dependencies to current
-  stable revisions.
+- Updated Microsoft WebView2, Microsoft runtime packages, and pinned GitHub
+  Actions dependencies to current stable revisions.
 - Expanded automated coverage to 28 compatibility, VPN transition, recovery,
   persistence, startup-policy, and package-integrity tests.
 - Added repeatable EAC-under-VPN and runtime stability checks covering stable

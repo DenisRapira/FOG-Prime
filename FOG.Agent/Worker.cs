@@ -57,7 +57,7 @@ public sealed class Worker(
             try
             {
                 var snapshot = await supervisor.RecoverIfNeededAsync(cancellationToken);
-                nextDelay = TransportPolicy.GetHealthInterval(snapshot.TransportMode);
+                nextDelay = TransportPolicy.GetHealthInterval(snapshot.TransportMode, snapshot.State);
                 await stateStore.SaveAsync(snapshot, cancellationToken);
                 if (HasStateChanged(snapshot))
                 {

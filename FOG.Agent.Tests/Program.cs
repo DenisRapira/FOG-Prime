@@ -33,7 +33,7 @@ var tests = new (string Name, Action Run)[]
     ("detects newer GitHub release versions", AssertReleaseVersionComparison),
     ("rejects untrusted release links", AssertReleaseLinkValidation),
     ("keeps a running profile during degraded probes", AssertDegradedProbePolicy),
-    ("rotates a degraded profile during startup", AssertStartupReadinessPolicy),
+    ("qualifies startup profiles in the background", AssertBackgroundQualificationPolicy),
     ("keeps a profile stable through a long session", AssertLongSessionStability),
     ("authenticates a recovered Engine session", AssertEngineSessionLease),
     ("persists the last working profile", AssertPreferredProfilePersistence),
@@ -186,6 +186,9 @@ static void AssertAdaptiveHealthIntervals()
     Assert(
         TransportPolicy.InitialHealthInterval <= TransportPolicy.DirectHealthInterval,
         "The first transition check is delayed longer than the direct-mode interval.");
+    Assert(
+        TransportPolicy.GetHealthInterval("engine", "recovering") == TransportPolicy.InitialHealthInterval,
+        "Background startup qualification is not scheduled promptly.");
 }
 
 static void AssertPreflightPolicy()
@@ -242,13 +245,25 @@ static void AssertDegradedProbePolicy()
     Assert(TransportPolicy.ShouldRotateProfile(false, degraded), "A terminated Engine was not selected for profile recovery.");
 }
 
-static void AssertStartupReadinessPolicy()
+static void AssertBackgroundQualificationPolicy()
 {
     var healthy = new[] { new FOG.Protocol.ProbeResult("gateway", true, 40, "ok") };
     var degraded = new[] { new FOG.Protocol.ProbeResult("discord.com", false, 3000, "timeout") };
-    Assert(!TransportPolicy.ShouldRotateAtStartup(true, healthy), "A ready startup profile was selected for rotation.");
-    Assert(TransportPolicy.ShouldRotateAtStartup(true, degraded), "A degraded startup profile blocked reserve selection.");
-    Assert(TransportPolicy.ShouldRotateAtStartup(false, healthy), "A terminated startup profile was accepted.");
+    Assert(
+        !TransportPolicy.ShouldRotatePendingProfile(true, 1, 0, 3, degraded),
+        "A single inconclusive check restarted a live Engine.");
+    Assert(
+        TransportPolicy.ShouldRotatePendingProfile(true, 2, 1, 3, degraded),
+        "Two failed readiness checks did not enable an unused reserve profile.");
+    Assert(
+        !TransportPolicy.ShouldRotatePendingProfile(true, 2, 3, 3, degraded),
+        "Startup qualification retried a profile after every profile was attempted.");
+    Assert(
+        !TransportPolicy.ShouldRotatePendingProfile(true, 2, 1, 3, healthy),
+        "A healthy startup profile was selected for rotation.");
+    Assert(
+        !TransportPolicy.ShouldRotatePendingProfile(false, 2, 1, 3, degraded),
+        "Background qualification tried to rotate an Engine that already exited.");
 }
 
 static void AssertLongSessionStability()
@@ -352,6 +367,9 @@ static void AssertPreferredProfilePersistence()
 
 static void AssertFastStartupProbe()
 {
+    Assert(
+        TransportPolicy.EngineLaunchSettleDelay <= TimeSpan.FromMilliseconds(350),
+        "The Engine launch path waits too long before returning control to the client.");
     Assert(
         ConnectionHealthChecker.StartupAttemptTimeout <= TimeSpan.FromSeconds(2),
         "The startup probe can still block profile selection for too long.");

@@ -44,6 +44,10 @@ public sealed class EngineSupervisor(
     private DateTimeOffset _lastProbeLogAt;
     private bool _preferredProfileLoaded;
     private string? _rememberedProfileId;
+    private bool _startupQualificationPending;
+    private int _startupQualificationFailures;
+    private DateTimeOffset _nextStartupQualificationAt;
+    private readonly HashSet<string> _startupAttemptedProfiles = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task<AgentSnapshot> StartBestAsync(CancellationToken cancellationToken)
     {
@@ -55,8 +59,10 @@ public sealed class EngineSupervisor(
             if (IsRunning)
             {
                 logger.LogInformation("FOG Engine is already running; preserving the active session");
-                return await RefreshHealthInternalAsync(cancellationToken);
+                return CreateSnapshot(CurrentState);
             }
+
+            ResetStartupCycle();
 
             var tunnel = tunnelDetector.FindActiveTunnel();
             LogTunnelInfo(tunnel, nameof(StartBestAsync));
@@ -68,6 +74,7 @@ public sealed class EngineSupervisor(
                 {
                     _directMode = true;
                     _waitingForTunnel = false;
+                    CompleteStartupQualification();
                     UpdateCompatibility(tunnel);
                     logger.LogInformation("Tunnel {Tunnel} already carries healthy traffic; WinDivert is not required", tunnel.Name);
                     return CreateSnapshot("ready");
@@ -103,6 +110,7 @@ public sealed class EngineSupervisor(
             _compatibility = null;
             _activeTunnel = null;
             _activeTunnelIdentity = null;
+            ResetStartupCycle();
             driverBackoff.Reset();
             await StopInternalAsync(cancellationToken);
             return CreateSnapshot("stopped");
@@ -145,6 +153,7 @@ public sealed class EngineSupervisor(
                 {
                     _directMode = true;
                     _waitingForTunnel = false;
+                    CompleteStartupQualification();
                     UpdateCompatibility(tunnel);
                     return CreateSnapshot("ready");
                 }
@@ -155,6 +164,7 @@ public sealed class EngineSupervisor(
                 if (_desiredRunning)
                 {
                     logger.LogInformation("Tunnel {Tunnel} failed a fresh direct check; starting FOG Engine", tunnel.Name);
+                    ResetStartupCycle();
                     return await StartBestInternalAsync(cancellationToken);
                 }
 
@@ -186,10 +196,16 @@ public sealed class EngineSupervisor(
                     return await ReevaluateTunnelAsync(tunnel, cancellationToken);
                 }
 
+                if (IsStartupQualificationDue())
+                {
+                    return await RefreshHealthInternalAsync(cancellationToken);
+                }
+
                 if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
                 {
                     _directMode = true;
                     _waitingForTunnel = false;
+                    CompleteStartupQualification();
                     UpdateCompatibility(tunnel);
                     return CreateSnapshot("ready");
                 }
@@ -198,6 +214,7 @@ public sealed class EngineSupervisor(
                 if (_desiredRunning && !IsRunning)
                 {
                     logger.LogInformation("Tunnel {Tunnel} is active but degraded; starting FOG Engine to restore connectivity", tunnel.Name);
+                    ResetStartupCycle();
                     return await StartBestInternalAsync(cancellationToken);
                 }
 
@@ -212,8 +229,14 @@ public sealed class EngineSupervisor(
                 if (_desiredRunning && !IsRunning)
                 {
                     logger.LogInformation("External tunnel closed; starting FOG Engine immediately");
+                    ResetStartupCycle();
                     return await StartBestInternalAsync(cancellationToken);
                 }
+            }
+
+            if (IsStartupQualificationDue())
+            {
+                return await RefreshHealthInternalAsync(cancellationToken);
             }
 
             UpdateCompatibility();
@@ -225,6 +248,7 @@ public sealed class EngineSupervisor(
                 }
 
                 logger.LogInformation("Restoring FOG Engine automatically");
+                ResetStartupCycle();
                 return await StartBestInternalAsync(cancellationToken);
             }
 
@@ -246,13 +270,16 @@ public sealed class EngineSupervisor(
             if (tunnel is not null)
             {
                 _lastProbes = IsRunning
-                    ? await healthChecker.CheckAsync(cancellationToken)
+                    ? _startupQualificationPending
+                        ? await healthChecker.CheckStartupAsync(cancellationToken)
+                        : await healthChecker.CheckAsync(cancellationToken)
                     : await healthChecker.CheckDirectAsync(cancellationToken);
                 LogProbeResults(_lastProbes, nameof(RecoverIfNeededAsync));
                 if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
                 {
                     _directMode = true;
                     _waitingForTunnel = false;
+                    CompleteStartupQualification();
                     UpdateCompatibility(tunnel);
                     return CreateSnapshot("ready");
                 }
@@ -262,23 +289,15 @@ public sealed class EngineSupervisor(
                 UpdateCompatibility(tunnel);
                 if (IsRunning)
                 {
-                    if (_lastProbes.All(probe => probe.Ok))
-                    {
-                        driverBackoff.Reset();
-                        if (_activeProfile is { } activeProfile)
-                        {
-                            RememberSuccessfulProfile(activeProfile.Id);
-                        }
-                        return CreateSnapshot("ready");
-                    }
-
-                    logger.LogInformation("Tunnel fallback probes are degraded; keeping the running Engine profile unchanged");
-                    return CreateSnapshot("degraded");
+                    return await ApplyEngineProbeResultsAsync(
+                        "Tunnel fallback probes are degraded; keeping the running Engine profile unchanged",
+                        cancellationToken);
                 }
 
                 if (_desiredRunning && !IsRunning)
                 {
                     logger.LogInformation("Tunnel {Tunnel} is active but degraded; starting FOG Engine to recover connectivity", tunnel.Name);
+                    ResetStartupCycle();
                     return await StartBestInternalAsync(cancellationToken);
                 }
 
@@ -290,6 +309,7 @@ public sealed class EngineSupervisor(
                 _directMode = false;
                 _waitingForTunnel = false;
                 UpdateCompatibility();
+                ResetStartupCycle();
                 return await StartBestInternalAsync(cancellationToken);
             }
 
@@ -302,6 +322,7 @@ public sealed class EngineSupervisor(
                 }
 
                 logger.LogWarning("FOG Engine is not running; starting automatic recovery");
+                ResetStartupCycle();
                 return await StartBestInternalAsync(cancellationToken);
             }
 
@@ -329,21 +350,98 @@ public sealed class EngineSupervisor(
             return CreateSnapshot(_desiredRunning ? "recovering" : "stopped");
         }
 
-        _lastProbes = await healthChecker.CheckAsync(cancellationToken);
+        _lastProbes = _startupQualificationPending
+            ? await healthChecker.CheckStartupAsync(cancellationToken)
+            : await healthChecker.CheckAsync(cancellationToken);
         LogProbeResults(_lastProbes, nameof(RefreshHealthInternalAsync));
-        if (_lastProbes.All(probe => probe.Ok))
+        return await ApplyEngineProbeResultsAsync(
+            "Connectivity probes are degraded; keeping the running Engine profile unchanged",
+            cancellationToken);
+    }
+
+    private async Task<AgentSnapshot> ApplyEngineProbeResultsAsync(
+        string stableSessionMessage,
+        CancellationToken cancellationToken)
+    {
+        if (_lastProbes.Count > 0 && _lastProbes.All(probe => probe.Ok))
         {
             driverBackoff.Reset();
             if (_activeProfile is { } activeProfile)
             {
                 RememberSuccessfulProfile(activeProfile.Id);
             }
+            CompleteStartupQualification();
             UpdateCompatibility();
             return CreateSnapshot("ready");
         }
 
-        logger.LogInformation("Connectivity probes are degraded; keeping the running Engine profile unchanged");
+        if (_startupQualificationPending && _activeProfile is { } pendingProfile)
+        {
+            _startupQualificationFailures++;
+            if (_startupQualificationFailures < 2)
+            {
+                _nextStartupQualificationAt = DateTimeOffset.UtcNow + TransportPolicy.InitialHealthInterval;
+                logger.LogInformation(
+                    "Profile {ProfileId} readiness check was inconclusive; keeping the live Engine and confirming once more",
+                    pendingProfile.Id);
+                UpdateCompatibility();
+                return CreateSnapshot("recovering");
+            }
+
+            _startupAttemptedProfiles.Add(pendingProfile.Id);
+            if (TransportPolicy.ShouldRotatePendingProfile(
+                IsRunning,
+                _startupQualificationFailures,
+                _startupAttemptedProfiles.Count,
+                catalog.All.Count,
+                _lastProbes))
+            {
+                ForgetPreferredProfile(pendingProfile.Id);
+                profileRotation.MovePast(pendingProfile.Id, catalog.All);
+                logger.LogWarning(
+                    "Profile {ProfileId} failed two background readiness checks; activating one reserve profile",
+                    pendingProfile.Id);
+                await StopInternalAsync(cancellationToken);
+                return await StartBestInternalAsync(cancellationToken);
+            }
+
+            logger.LogWarning(
+                "All profiles were qualified once without a complete probe set; keeping the last live Engine and stopping rotation");
+            CompleteStartupQualification();
+            UpdateCompatibility();
+            return CreateSnapshot("degraded");
+        }
+
+        logger.LogInformation(stableSessionMessage);
         return CreateSnapshot("degraded");
+    }
+
+    private void MarkStartupQualificationPending(EngineProfile profile)
+    {
+        _activeProfile = profile;
+        _startupQualificationPending = true;
+        _startupQualificationFailures = 0;
+        _nextStartupQualificationAt = DateTimeOffset.UtcNow + TransportPolicy.InitialHealthInterval;
+        _lastProbes = Array.Empty<ProbeResult>();
+    }
+
+    private void CompleteStartupQualification()
+    {
+        _startupQualificationPending = false;
+        _startupQualificationFailures = 0;
+        _nextStartupQualificationAt = default;
+        _startupAttemptedProfiles.Clear();
+    }
+
+    private bool IsStartupQualificationDue() =>
+        _startupQualificationPending &&
+        IsRunning &&
+        DateTimeOffset.UtcNow >= _nextStartupQualificationAt;
+
+    private void ResetStartupCycle()
+    {
+        CompleteStartupQualification();
+        _lastProbes = Array.Empty<ProbeResult>();
     }
 
     private async Task<AgentSnapshot> StartBestInternalAsync(CancellationToken cancellationToken)
@@ -358,16 +456,9 @@ public sealed class EngineSupervisor(
         if (TryAdoptSessionEngine() is { } adoptedProfile)
         {
             profileRotation.Prefer(adoptedProfile.Id);
-            CreateSnapshot("recovering");
-            _lastProbes = await healthChecker.CheckStartupAsync(cancellationToken);
+            MarkStartupQualificationPending(adoptedProfile);
             UpdateCompatibility();
-            if (_lastProbes.All(probe => probe.Ok))
-            {
-                RememberSuccessfulProfile(adoptedProfile.Id);
-                return CreateSnapshot("ready");
-            }
-
-            return CreateSnapshot("degraded");
+            return CreateSnapshot("recovering");
         }
 
         await StopStaleEnginesAsync(cancellationToken);
@@ -385,7 +476,7 @@ public sealed class EngineSupervisor(
             }
 
             StartProfile(profile);
-            await Task.Delay(TimeSpan.FromMilliseconds(650), cancellationToken);
+            await Task.Delay(TransportPolicy.EngineLaunchSettleDelay, cancellationToken);
             if (await DeferToActiveTunnelAsync(cancellationToken) is { } activatedTunnelSnapshot)
             {
                 return activatedTunnelSnapshot;
@@ -406,25 +497,12 @@ public sealed class EngineSupervisor(
 
             _activeProfile = profile;
             profileRotation.Prefer(profile.Id);
-            CreateSnapshot("recovering");
-            _lastProbes = await healthChecker.CheckStartupAsync(cancellationToken);
-            if (await DeferToActiveTunnelAsync(cancellationToken) is { } probedTunnelSnapshot)
-            {
-                return probedTunnelSnapshot;
-            }
-
-            if (!TransportPolicy.ShouldRotateAtStartup(IsRunning, _lastProbes))
-            {
-                RememberSuccessfulProfile(profile.Id);
-                UpdateCompatibility();
-                return CreateSnapshot("ready");
-            }
-
-            ForgetPreferredProfile(profile.Id);
-            logger.LogWarning(
-                "Profile {ProfileId} did not pass startup readiness; trying the next reserve profile",
+            MarkStartupQualificationPending(profile);
+            UpdateCompatibility();
+            logger.LogInformation(
+                "Profile {ProfileId} is active; readiness qualification will continue in the background",
                 profile.Id);
-            profileRotation.MovePast(profile.Id, catalog.All);
+            return CreateSnapshot("recovering");
         }
 
         if (IsRunning)
@@ -459,6 +537,7 @@ public sealed class EngineSupervisor(
 
         _directMode = true;
         _waitingForTunnel = false;
+        CompleteStartupQualification();
         UpdateCompatibility(tunnel);
         return CreateSnapshot("ready");
     }
@@ -480,6 +559,7 @@ public sealed class EngineSupervisor(
         if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
         {
             _directMode = true;
+            CompleteStartupQualification();
             UpdateCompatibility(tunnel);
             logger.LogInformation("Tunnel {Tunnel} passed the direct handoff check", tunnel.Name);
             return CreateSnapshot("ready");
@@ -489,6 +569,7 @@ public sealed class EngineSupervisor(
         if (_desiredRunning)
         {
             logger.LogInformation("Tunnel {Tunnel} did not pass the direct handoff check; starting FOG Engine", tunnel.Name);
+            ResetStartupCycle();
             return await StartBestInternalAsync(cancellationToken);
         }
 
@@ -886,6 +967,7 @@ public sealed class EngineSupervisor(
             state,
             IsRunning,
             !_waitingForTunnel &&
+                !_startupQualificationPending &&
                 (IsRunning || _directMode) &&
                 _lastProbes.Count > 0 &&
                 _lastProbes.All(probe => probe.Ok),
@@ -902,6 +984,7 @@ public sealed class EngineSupervisor(
     private string CurrentState =>
         _waitingForTunnel ? "recovering" :
         _directMode ? (_lastProbes.Count > 0 && _lastProbes.All(probe => probe.Ok) ? "ready" : "degraded") :
+        _startupQualificationPending ? "recovering" :
         !IsRunning ? (_desiredRunning ? "recovering" : "stopped") :
         _lastProbes.Count > 0 && _lastProbes.All(probe => probe.Ok) ? "ready" :
         "degraded";

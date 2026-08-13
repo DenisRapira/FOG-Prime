@@ -5,6 +5,7 @@ namespace FOG.Agent;
 
 public static class TransportPolicy
 {
+    public static readonly TimeSpan EngineLaunchSettleDelay = TimeSpan.FromMilliseconds(300);
     public static readonly TimeSpan InitialHealthInterval = TimeSpan.FromSeconds(3);
     public static readonly TimeSpan DirectHealthInterval = TimeSpan.FromSeconds(5);
     public static readonly TimeSpan EngineHealthInterval = TimeSpan.FromSeconds(20);
@@ -23,8 +24,10 @@ public static class TransportPolicy
             probes.All(probe => probe.Ok);
     }
 
-    public static TimeSpan GetHealthInterval(string? transportMode) =>
-        string.Equals(transportMode, "engine", StringComparison.OrdinalIgnoreCase)
+    public static TimeSpan GetHealthInterval(string? transportMode, string? state = null) =>
+        string.Equals(state, "recovering", StringComparison.OrdinalIgnoreCase)
+            ? InitialHealthInterval
+            : string.Equals(transportMode, "engine", StringComparison.OrdinalIgnoreCase)
             ? EngineHealthInterval
             : DirectHealthInterval;
 
@@ -37,12 +40,17 @@ public static class TransportPolicy
         return !engineRunning;
     }
 
-    public static bool ShouldRotateAtStartup(
+    public static bool ShouldRotatePendingProfile(
         bool engineRunning,
+        int consecutiveFailures,
+        int attemptedProfiles,
+        int totalProfiles,
         IReadOnlyCollection<ProbeResult> probes)
     {
-        return !engineRunning ||
-            probes.Count == 0 ||
+        return engineRunning &&
+            consecutiveFailures >= 2 &&
+            attemptedProfiles < totalProfiles &&
+            probes.Count > 0 &&
             probes.Any(probe => !probe.Ok);
     }
 }
