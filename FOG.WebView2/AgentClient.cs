@@ -12,6 +12,7 @@ namespace FOG.WebView2;
 internal sealed class AgentClient
 {
     private const string AgentHashResource = "FOG.WebView2.TrustedAgent.sha256";
+    internal const int MaxConsecutiveAuthenticationFailures = 3;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly SemaphoreSlim _startupGate = new(1, 1);
     private readonly string _sessionToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -19,6 +20,7 @@ internal sealed class AgentClient
     private readonly string _enginePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "runtime", "FOG.Engine.exe"));
     private Process? _spawnedAgent;
     private bool _sessionPrepared;
+    private int _consecutiveAuthenticationFailures;
 
     public async Task<AgentResponse> SendAsync(string command, CancellationToken cancellationToken)
     {
@@ -55,6 +57,7 @@ internal sealed class AgentClient
         TerminateOwnedProcesses("FOG.Agent", _agentPath);
         _spawnedAgent?.Dispose();
         _spawnedAgent = null;
+        _consecutiveAuthenticationFailures = 0;
     }
 
     private async Task EnsureAvailableAsync(CancellationToken cancellationToken)
@@ -64,12 +67,25 @@ internal sealed class AgentClient
         {
             if (_spawnedAgent is { HasExited: false } && await CanAuthenticateAsync(cancellationToken))
             {
+                _consecutiveAuthenticationFailures = 0;
                 return;
             }
 
-            if (_spawnedAgent is { HasExited: false })
+            if (_spawnedAgent is { HasExited: false } unresponsiveAgent)
             {
-                throw new TimeoutException("FOG Prime Agent is busy and will be checked again.");
+                _consecutiveAuthenticationFailures++;
+                if (!ShouldRestartAfterAuthenticationFailure(_consecutiveAuthenticationFailures))
+                {
+                    throw new TimeoutException("FOG Prime Agent is busy and will be checked again.");
+                }
+
+                DiagnosticLog.Write(
+                    "UI",
+                    $"Agent failed authentication {_consecutiveAuthenticationFailures} consecutive times; restarting pid={unresponsiveAgent.Id}");
+                TryTerminate(unresponsiveAgent);
+                unresponsiveAgent.Dispose();
+                _spawnedAgent = null;
+                _consecutiveAuthenticationFailures = 0;
             }
 
             if (!_sessionPrepared)
@@ -115,6 +131,7 @@ internal sealed class AgentClient
 
                 if (await CanAuthenticateAsync(cancellationToken))
                 {
+                    _consecutiveAuthenticationFailures = 0;
                     return;
                 }
 
@@ -216,6 +233,9 @@ internal sealed class AgentClient
               command.Equals("shutdown", StringComparison.OrdinalIgnoreCase)
                 ? TimeSpan.FromSeconds(30)
             : TimeSpan.FromSeconds(10);
+
+    internal static bool ShouldRestartAfterAuthenticationFailure(int consecutiveFailures) =>
+        consecutiveFailures >= MaxConsecutiveAuthenticationFailures;
 
     private static void AttachDiagnostics(Process process)
     {

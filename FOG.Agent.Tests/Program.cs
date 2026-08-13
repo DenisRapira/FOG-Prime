@@ -25,8 +25,11 @@ var tests = new (string Name, Action Run)[]
     ("ignores inactive VPN adapters", AssertInactiveVpnIgnored),
     ("preserves VPN signal during protected game", AssertIndependentVpnSignal),
     ("uses direct mode only with an active healthy VPN", AssertDirectModePolicy),
+    ("does not promote Engine probes to VPN readiness", AssertEngineProbeIsolation),
+    ("checks direct VPN mode more frequently", AssertAdaptiveHealthIntervals),
     ("starts Engine without a normal-network preflight", AssertPreflightPolicy),
     ("allows automatic start to outlive slow probes", AssertAgentCommandTimeouts),
+    ("restarts an unresponsive Agent after bounded retries", AssertAgentRestartPolicy),
     ("detects newer GitHub release versions", AssertReleaseVersionComparison),
     ("rejects untrusted release links", AssertReleaseLinkValidation),
     ("keeps a running profile during degraded probes", AssertDegradedProbePolicy),
@@ -161,6 +164,30 @@ static void AssertDirectModePolicy()
     Assert(!TransportPolicy.CanUseDirectMode(tunnel, unhealthy), "An unhealthy VPN was incorrectly marked ready.");
 }
 
+static void AssertEngineProbeIsolation()
+{
+    var healthy = new[] { new FOG.Protocol.ProbeResult("gateway", true, 10, "ok") };
+    var tunnel = new NetworkAdapterInfo(
+        "kosmos-tun",
+        "sing-tun Tunnel",
+        (System.Net.NetworkInformation.NetworkInterfaceType)53,
+        System.Net.NetworkInformation.OperationalStatus.Up);
+
+    Assert(
+        !TransportPolicy.CanUseDirectMode(tunnel, healthy, engineRunning: true),
+        "Health measured through FOG Engine incorrectly disabled the Engine for a stale VPN adapter.");
+}
+
+static void AssertAdaptiveHealthIntervals()
+{
+    Assert(
+        TransportPolicy.GetHealthInterval("direct") < TransportPolicy.GetHealthInterval("engine"),
+        "Direct VPN mode is not checked faster than a stable Engine session.");
+    Assert(
+        TransportPolicy.InitialHealthInterval <= TransportPolicy.DirectHealthInterval,
+        "The first transition check is delayed longer than the direct-mode interval.");
+}
+
 static void AssertPreflightPolicy()
 {
     var tunnel = new NetworkAdapterInfo(
@@ -179,6 +206,13 @@ static void AssertAgentCommandTimeouts()
     Assert(FOG.WebView2.AgentClient.GetResponseTimeout("recheck") == TimeSpan.FromSeconds(90), "Recheck timeout is too short for stable probes.");
     Assert(FOG.WebView2.AgentClient.GetResponseTimeout("status") == TimeSpan.FromSeconds(10), "Status timeout must remain bounded.");
     Assert(FOG.WebView2.AgentClient.GetResponseTimeout("shutdown") == TimeSpan.FromSeconds(30), "Shutdown timeout is too short for an in-flight probe.");
+}
+
+static void AssertAgentRestartPolicy()
+{
+    Assert(!FOG.WebView2.AgentClient.ShouldRestartAfterAuthenticationFailure(1), "Agent restarts after a single transient IPC failure.");
+    Assert(!FOG.WebView2.AgentClient.ShouldRestartAfterAuthenticationFailure(2), "Agent restarts before the bounded retry threshold.");
+    Assert(FOG.WebView2.AgentClient.ShouldRestartAfterAuthenticationFailure(3), "An unresponsive Agent is never restarted.");
 }
 
 static void AssertReleaseVersionComparison()
@@ -321,6 +355,9 @@ static void AssertFastStartupProbe()
     Assert(
         ConnectionHealthChecker.StartupAttemptTimeout <= TimeSpan.FromSeconds(2),
         "The startup probe can still block profile selection for too long.");
+    Assert(
+        ConnectionHealthChecker.DirectFailureConfirmationDelay <= TimeSpan.FromMilliseconds(500),
+        "Direct-mode failure confirmation adds too much delay.");
 }
 
 static void AssertProfileRotation()

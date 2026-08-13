@@ -8,6 +8,7 @@ namespace FOG.Agent;
 public sealed class ConnectionHealthChecker : IDisposable
 {
     internal static readonly TimeSpan StartupAttemptTimeout = TimeSpan.FromSeconds(2);
+    internal static readonly TimeSpan DirectFailureConfirmationDelay = TimeSpan.FromMilliseconds(250);
     private static readonly string[] GatewayHosts = { "gateway.discord.gg", "discord.com" };
     private static readonly string[] DiscordApiEndpoints =
     {
@@ -107,6 +108,18 @@ public sealed class ConnectionHealthChecker : IDisposable
         Interlocked.Increment(ref _discordCdnOffset);
         Interlocked.Increment(ref _youtubeOffset);
         return results;
+    }
+
+    public async Task<IReadOnlyList<ProbeResult>> CheckDirectAsync(CancellationToken cancellationToken)
+    {
+        var first = await CheckStartupAsync(cancellationToken);
+        if (first.All(result => result.Ok))
+        {
+            return first;
+        }
+
+        await Task.Delay(DirectFailureConfirmationDelay, cancellationToken);
+        return await CheckStartupAsync(cancellationToken);
     }
 
     private static async Task<ProbeResult> CheckOnceAsync(

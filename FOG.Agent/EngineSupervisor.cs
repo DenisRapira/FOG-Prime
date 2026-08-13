@@ -35,6 +35,7 @@ public sealed class EngineSupervisor(
         null);
     private CompatibilityInfo? _compatibility;
     private string? _activeTunnel;
+    private string? _activeTunnelIdentity;
     private bool _directMode;
     private bool _waitingForTunnel;
     private volatile bool _desiredRunning;
@@ -101,6 +102,7 @@ public sealed class EngineSupervisor(
             _waitingForTunnel = false;
             _compatibility = null;
             _activeTunnel = null;
+            _activeTunnelIdentity = null;
             driverBackoff.Reset();
             await StopInternalAsync(cancellationToken);
             return CreateSnapshot("stopped");
@@ -135,24 +137,28 @@ public sealed class EngineSupervisor(
         {
             var tunnel = tunnelDetector.FindActiveTunnel();
             LogTunnelInfo(tunnel, nameof(RefreshHealthAsync));
-            if (tunnel is not null)
+            if (tunnel is not null && !IsRunning)
             {
-                if (IsRunning && TransportPolicy.CanUseDirectMode(tunnel, _lastProbes))
+                _lastProbes = await healthChecker.CheckAsync(cancellationToken);
+                LogProbeResults(_lastProbes, nameof(RefreshHealthAsync));
+                if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
                 {
-                    logger.LogInformation("Tunnel {Tunnel} became active and is healthy; releasing WinDivert before health checks", tunnel.Name);
-                    await StopInternalAsync(cancellationToken);
                     _directMode = true;
                     _waitingForTunnel = false;
                     UpdateCompatibility(tunnel);
                     return CreateSnapshot("ready");
                 }
 
-                if (IsRunning)
+                _directMode = false;
+                _waitingForTunnel = false;
+                UpdateCompatibility(tunnel);
+                if (_desiredRunning)
                 {
-                    logger.LogInformation("Tunnel {Tunnel} is active but degraded; keeping FOG Engine running for connectivity", tunnel.Name);
-                    _directMode = false;
-                    _waitingForTunnel = false;
+                    logger.LogInformation("Tunnel {Tunnel} failed a fresh direct check; starting FOG Engine", tunnel.Name);
+                    return await StartBestInternalAsync(cancellationToken);
                 }
+
+                return CreateSnapshot("degraded");
             }
 
             UpdateCompatibility(tunnel);
@@ -173,14 +179,15 @@ public sealed class EngineSupervisor(
             LogTunnelInfo(tunnel, nameof(ReconcileCompatibilityAsync));
             if (tunnel is not null)
             {
-                if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes))
+                var tunnelIdentity = GetTunnelIdentity(tunnel);
+                var tunnelChanged = !string.Equals(tunnelIdentity, _activeTunnelIdentity, StringComparison.Ordinal);
+                if (tunnelChanged && _desiredRunning && (_directMode || IsRunning || _lastProbes.Count > 0))
                 {
-                    if (IsRunning)
-                    {
-                        logger.LogInformation("Tunnel {Tunnel} became active and can carry healthy traffic; releasing WinDivert", tunnel.Name);
-                        await StopInternalAsync(cancellationToken);
-                    }
+                    return await ReevaluateTunnelAsync(tunnel, cancellationToken);
+                }
 
+                if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
+                {
                     _directMode = true;
                     _waitingForTunnel = false;
                     UpdateCompatibility(tunnel);
@@ -238,15 +245,12 @@ public sealed class EngineSupervisor(
             LogTunnelInfo(tunnel, nameof(RecoverIfNeededAsync));
             if (tunnel is not null)
             {
-                _lastProbes = await healthChecker.CheckAsync(cancellationToken);
+                _lastProbes = IsRunning
+                    ? await healthChecker.CheckAsync(cancellationToken)
+                    : await healthChecker.CheckDirectAsync(cancellationToken);
                 LogProbeResults(_lastProbes, nameof(RecoverIfNeededAsync));
-                if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes))
+                if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
                 {
-                    if (IsRunning)
-                    {
-                        await StopInternalAsync(cancellationToken);
-                    }
-
                     _directMode = true;
                     _waitingForTunnel = false;
                     UpdateCompatibility(tunnel);
@@ -256,6 +260,22 @@ public sealed class EngineSupervisor(
                 _directMode = false;
                 _waitingForTunnel = false;
                 UpdateCompatibility(tunnel);
+                if (IsRunning)
+                {
+                    if (_lastProbes.All(probe => probe.Ok))
+                    {
+                        driverBackoff.Reset();
+                        if (_activeProfile is { } activeProfile)
+                        {
+                            RememberSuccessfulProfile(activeProfile.Id);
+                        }
+                        return CreateSnapshot("ready");
+                    }
+
+                    logger.LogInformation("Tunnel fallback probes are degraded; keeping the running Engine profile unchanged");
+                    return CreateSnapshot("degraded");
+                }
+
                 if (_desiredRunning && !IsRunning)
                 {
                     logger.LogInformation("Tunnel {Tunnel} is active but degraded; starting FOG Engine to recover connectivity", tunnel.Name);
@@ -422,7 +442,7 @@ public sealed class EngineSupervisor(
     private async Task<AgentSnapshot?> DeferToActiveTunnelAsync(CancellationToken cancellationToken)
     {
         var tunnel = tunnelDetector.FindActiveTunnel();
-        if (tunnel is null || !TransportPolicy.CanUseDirectMode(tunnel, _lastProbes))
+        if (tunnel is null || !TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
         {
             if (tunnel is not null)
             {
@@ -443,6 +463,38 @@ public sealed class EngineSupervisor(
         return CreateSnapshot("ready");
     }
 
+    private async Task<AgentSnapshot> ReevaluateTunnelAsync(
+        NetworkAdapterInfo tunnel,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Tunnel topology changed for {Tunnel}; verifying the new route before selecting transport", tunnel.Name);
+        if (IsRunning)
+        {
+            await StopInternalAsync(cancellationToken);
+        }
+
+        _directMode = false;
+        _waitingForTunnel = false;
+        _lastProbes = await healthChecker.CheckStartupAsync(cancellationToken);
+        LogProbeResults(_lastProbes, nameof(ReevaluateTunnelAsync));
+        if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
+        {
+            _directMode = true;
+            UpdateCompatibility(tunnel);
+            logger.LogInformation("Tunnel {Tunnel} passed the direct handoff check", tunnel.Name);
+            return CreateSnapshot("ready");
+        }
+
+        UpdateCompatibility(tunnel);
+        if (_desiredRunning)
+        {
+            logger.LogInformation("Tunnel {Tunnel} did not pass the direct handoff check; starting FOG Engine", tunnel.Name);
+            return await StartBestInternalAsync(cancellationToken);
+        }
+
+        return CreateSnapshot("degraded");
+    }
+
     private void UpdateCompatibility()
     {
         UpdateCompatibility(tunnelDetector.FindActiveTunnel());
@@ -451,6 +503,7 @@ public sealed class EngineSupervisor(
     private void UpdateCompatibility(NetworkAdapterInfo? tunnel)
     {
         _activeTunnel = tunnel?.Name;
+        _activeTunnelIdentity = GetTunnelIdentity(tunnel);
         var detected = compatibilityGuard.Check();
         if (detected.IsActive)
         {
@@ -473,7 +526,7 @@ public sealed class EngineSupervisor(
     {
         var signature = tunnel is null
             ? "none"
-            : $"{tunnel.Name}|{tunnel.Description}|{tunnel.Type}|{tunnel.Status}";
+            : GetTunnelIdentity(tunnel);
         if (string.Equals(signature, _lastTunnelLogSignature, StringComparison.Ordinal))
         {
             return;
@@ -493,6 +546,13 @@ public sealed class EngineSupervisor(
             tunnel.Description,
             tunnel.Type,
             tunnel.Status);
+    }
+
+    private static string? GetTunnelIdentity(NetworkAdapterInfo? tunnel)
+    {
+        return tunnel is null
+            ? null
+            : string.Join('|', tunnel.Name, tunnel.Description, tunnel.Type, tunnel.Status, tunnel.Id, tunnel.ConnectionSignature);
     }
 
     private void LogProbeResults(IReadOnlyCollection<ProbeResult> probes, string source)

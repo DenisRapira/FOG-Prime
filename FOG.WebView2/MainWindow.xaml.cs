@@ -301,7 +301,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var currentVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.1.8";
+            var currentVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.1.9";
             var update = await _updateChecker.CheckAsync(currentVersion, cancellationToken);
             if (update is null)
             {

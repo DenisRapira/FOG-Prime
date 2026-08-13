@@ -6,7 +6,9 @@ public sealed record NetworkAdapterInfo(
     string Name,
     string Description,
     NetworkInterfaceType Type,
-    OperationalStatus Status);
+    OperationalStatus Status,
+    string Id = "",
+    string ConnectionSignature = "");
 
 public interface INetworkAdapterSource
 {
@@ -18,12 +20,38 @@ public sealed class SystemNetworkAdapterSource : INetworkAdapterSource
     public IReadOnlyCollection<NetworkAdapterInfo> GetAdapters()
     {
         return NetworkInterface.GetAllNetworkInterfaces()
-            .Select(adapter => new NetworkAdapterInfo(
-                adapter.Name,
-                adapter.Description,
-                adapter.NetworkInterfaceType,
-                adapter.OperationalStatus))
+            .Select(CreateAdapterInfo)
             .ToArray();
+    }
+
+    private static NetworkAdapterInfo CreateAdapterInfo(NetworkInterface adapter)
+    {
+        return new NetworkAdapterInfo(
+            adapter.Name,
+            adapter.Description,
+            adapter.NetworkInterfaceType,
+            adapter.OperationalStatus,
+            adapter.Id,
+            GetConnectionSignature(adapter));
+    }
+
+    private static string GetConnectionSignature(NetworkInterface adapter)
+    {
+        try
+        {
+            var properties = adapter.GetIPProperties();
+            var addresses = properties.UnicastAddresses
+                .Select(address => address.Address.ToString())
+                .Order(StringComparer.OrdinalIgnoreCase);
+            var gateways = properties.GatewayAddresses
+                .Select(gateway => gateway.Address.ToString())
+                .Order(StringComparer.OrdinalIgnoreCase);
+            return string.Join('|', addresses.Concat(gateways));
+        }
+        catch (NetworkInformationException)
+        {
+            return string.Empty;
+        }
     }
 }
 

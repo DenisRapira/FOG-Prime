@@ -50,12 +50,14 @@ public sealed class Worker(
 
     private async Task RunHealthLoopAsync(CancellationToken cancellationToken)
     {
+        var nextDelay = TransportPolicy.InitialHealthInterval;
         while (!cancellationToken.IsCancellationRequested)
         {
-            await Task.Delay(TimeSpan.FromSeconds(20), cancellationToken);
+            await Task.Delay(nextDelay, cancellationToken);
             try
             {
                 var snapshot = await supervisor.RecoverIfNeededAsync(cancellationToken);
+                nextDelay = TransportPolicy.GetHealthInterval(snapshot.TransportMode);
                 await stateStore.SaveAsync(snapshot, cancellationToken);
                 if (HasStateChanged(snapshot))
                 {
@@ -69,6 +71,7 @@ public sealed class Worker(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Agent health refresh failed");
+                nextDelay = TransportPolicy.DirectHealthInterval;
             }
         }
     }

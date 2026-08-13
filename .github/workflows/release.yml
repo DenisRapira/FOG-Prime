@@ -12,11 +12,11 @@ jobs:
   windows-x64:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 8.0.x
-      - uses: cygwin/cygwin-install-action@006ad0b0946ca6d0a3ea2d4437677fa767392401 # v4
+      - uses: cygwin/cygwin-install-action@121fc294c6b6864e1d52caeaa5c8ddb33d3e90f3 # v6
         with:
           platform: x86_64
           site: https://mirrors.kernel.org/sourceware/cygwin/

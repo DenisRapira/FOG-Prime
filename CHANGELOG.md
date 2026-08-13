@@ -4,6 +4,25 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-08-13
+
+- Fixed automatic recovery after an external VPN is disconnected while its
+  process or virtual adapter remains present in Windows.
+- Added tunnel topology fingerprints and fast direct-mode checks so FOG can
+  switch from VPN transport to FOG Engine without restarting the application.
+- Prevented successful probes made through a running FOG Engine from being
+  reused as proof that a stale VPN route is healthy.
+- Added bounded UI recovery that restarts an unresponsive local Agent only
+  after three consecutive authenticated IPC failures.
+- Increased VPN transition monitoring frequency while retaining a quiet
+  20-second health interval for stable Engine sessions.
+- Updated Microsoft WebView2 and pinned GitHub Actions dependencies to current
+  stable revisions.
+- Expanded automated coverage to 28 compatibility, VPN transition, recovery,
+  persistence, startup-policy, and package-integrity tests.
+
+## [0.1.0] - 2026-07-11
+
 ### Foundation
 
 - Source-built FOG Engine runtime.
