@@ -20,6 +20,8 @@ All notable changes are documented here. This project follows Semantic Versionin
   stable revisions.
 - Expanded automated coverage to 28 compatibility, VPN transition, recovery,
   persistence, startup-policy, and package-integrity tests.
+- Added repeatable EAC-under-VPN and runtime stability checks covering stable
+  process IDs, bounded memory/handle growth, and clean shutdown.
 
 ## [0.1.0] - 2026-07-11
 

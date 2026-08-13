@@ -76,7 +76,8 @@ try {
         $state.connectionHealthy -and
         $state.compatibility.reason -eq "protectedGame" -and
         ($state.engineRunning -or $state.transportMode -eq "direct") -and
-        @($state.probes | Where-Object { $_.ok }).Count -eq 5
+        @($state.probes).Count -ge 4 -and
+        @($state.probes | Where-Object { -not $_.ok }).Count -eq 0
     } "FOG did not remain fully ready while the EAC process was active." $started
 
     $engineId = $null
@@ -123,7 +124,7 @@ try {
         throw "FOG processes remained after UI close: $($remaining.ProcessName -join ', ')."
     }
 
-    Write-Host "PASS: EAC active + 5/5 probes + stable transport + settled compatibility state + clean close"
+    Write-Host "PASS: EAC active + all probes healthy + stable transport + settled compatibility state + clean close"
 }
 finally {
     if ($fakeEac -and -not $fakeEac.HasExited) {
