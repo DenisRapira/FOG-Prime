@@ -5,7 +5,7 @@ namespace FOG.Agent;
 
 public sealed class PreferredProfileStore
 {
-    private const int StateVersion = 1;
+    private const int StateVersion = 2;
     private readonly string _path;
     private readonly ILogger<PreferredProfileStore> _logger;
     private readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
@@ -26,7 +26,7 @@ public sealed class PreferredProfileStore
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
     }
 
-    public PreferredProfileState? TryLoad()
+    public PreferredProfileState? TryLoad(string? context = null)
     {
         if (!File.Exists(_path))
         {
@@ -39,7 +39,10 @@ public sealed class PreferredProfileStore
             if (state is null ||
                 state.Version != StateVersion ||
                 string.IsNullOrWhiteSpace(state.ProfileId) ||
-                state.VerifiedAt == default)
+                state.VerifiedAt == default ||
+                state.VerifiedAt > DateTimeOffset.UtcNow.AddMinutes(5) ||
+                DateTimeOffset.UtcNow - state.VerifiedAt > TimeSpan.FromDays(7) ||
+                !string.Equals(state.Context, context, StringComparison.Ordinal))
             {
                 Clear();
                 return null;
@@ -55,11 +58,11 @@ public sealed class PreferredProfileStore
         }
     }
 
-    public void Save(string profileId)
+    public void Save(string profileId, string? context = null)
     {
         try
         {
-            var state = new PreferredProfileState(StateVersion, profileId, DateTimeOffset.UtcNow);
+            var state = new PreferredProfileState(StateVersion, profileId, DateTimeOffset.UtcNow, context);
             var temporaryPath = _path + ".tmp";
             File.WriteAllText(temporaryPath, JsonSerializer.Serialize(state, _json));
             File.Move(temporaryPath, _path, overwrite: true);
@@ -87,4 +90,5 @@ public sealed class PreferredProfileStore
 public sealed record PreferredProfileState(
     int Version,
     string ProfileId,
-    DateTimeOffset VerifiedAt);
+    DateTimeOffset VerifiedAt,
+    string? Context = null);

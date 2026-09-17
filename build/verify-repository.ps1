@@ -46,7 +46,17 @@ foreach ($profile in $profiles) {
     }
     $voiceDecoy = '${runtime}\voice_decoy_quic.bin'
     $discordFakes = @($profile.arguments | Where-Object { $_ -like '--dpi-desync-fake-discord=*' })
-    if ($discordFakes.Count -ne 2 -or
+    if ($profile.id -eq 'fog-connect-1102') {
+        $activeUdp = '--dpi-desync-fake-discord=${runtime}\ACTIVE_DISCORD_UDP.bin'
+        if ($discordFakes.Count -ne 1 -or $discordFakes[0] -ne $activeUdp -or
+            -not (@($profile.arguments) -contains '--dpi-desync-fake-stun=${runtime}\ACTIVE_DISCORD_UDP.bin') -or
+            -not (@($profile.arguments) -contains '--dpi-desync-fake-tls=${runtime}\tls_clienthello_sochi_park.bin') -or
+            -not (@($profile.arguments) -contains '--dpi-desync-fake-tls=${runtime}\stun2.bin') -or
+            -not (@($profile.arguments) -contains '--dpi-desync-hostfakesplit-mod=host=mail.ru,altorder=1')) {
+            throw 'The 1.10.2-derived profile is missing its required payloads.'
+        }
+    }
+    elseif ($discordFakes.Count -ne 2 -or
         $discordFakes[0] -ne '--dpi-desync-fake-discord=${runtime}\stun.bin' -or
         $discordFakes[1] -ne "--dpi-desync-fake-discord=$voiceDecoy" -or
         -not (@($profile.arguments) -contains "--dpi-desync-fake-stun=$voiceDecoy") -or
@@ -104,8 +114,14 @@ if ($agentProjectSource -notmatch 'FogRuntimeManifestPath' -or
     $uiProjectSource -notmatch 'FogAgentHashPath' -or
     $packageSource -notmatch 'trusted-agent\.sha256' -or
     $packageSource -notmatch 'FogProfilesPath' -or
-    $packageSource -notmatch 'NuGetLockFilePath=obj\\publish-win-x64\.packages\.lock\.json') {
+    $packageSource -notmatch 'NuGetLockFilePath=packages\.win-x64\.lock\.json' -or
+    $packageSource -notmatch 'RestoreLockedMode=true') {
     throw "Package trust chain is incomplete."
+}
+foreach ($project in @('FOG.Agent', 'FOG.WebView2', 'FOG.Protocol')) {
+    if (-not (Test-Path (Join-Path $root "$project\packages.win-x64.lock.json"))) {
+        throw "Publish lockfile is missing for $project."
+    }
 }
 if ($leaseSource -notmatch 'HMACSHA256' -or
     $leaseSource -notmatch 'FixedTimeEquals' -or

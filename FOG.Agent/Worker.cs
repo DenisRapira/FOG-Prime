@@ -53,7 +53,7 @@ public sealed class Worker(
         var nextDelay = TransportPolicy.InitialHealthInterval;
         while (!cancellationToken.IsCancellationRequested)
         {
-            await Task.Delay(nextDelay, cancellationToken);
+            await supervisor.WaitForHealthRefreshAsync(nextDelay, cancellationToken);
             try
             {
                 var snapshot = await supervisor.RecoverIfNeededAsync(cancellationToken);

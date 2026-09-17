@@ -46,7 +46,8 @@ public sealed class SystemNetworkAdapterSource : INetworkAdapterSource
             var gateways = properties.GatewayAddresses
                 .Select(gateway => gateway.Address.ToString())
                 .Order(StringComparer.OrdinalIgnoreCase);
-            return string.Join('|', addresses.Concat(gateways));
+            var dns = properties.DnsAddresses.Select(address => address.ToString()).Order(StringComparer.OrdinalIgnoreCase);
+            return string.Join('|', addresses.Concat(gateways).Concat(dns));
         }
         catch (NetworkInformationException)
         {
@@ -57,6 +58,16 @@ public sealed class SystemNetworkAdapterSource : INetworkAdapterSource
 
 public sealed class ExternalTunnelDetector(INetworkAdapterSource adapterSource)
 {
+    public string GetNetworkIdentity()
+    {
+        var signature = string.Join('\n', adapterSource.GetAdapters()
+            .Where(adapter => adapter.Status == OperationalStatus.Up && adapter.Type != NetworkInterfaceType.Loopback)
+            .OrderBy(adapter => adapter.Id, StringComparer.Ordinal)
+            .ThenBy(adapter => adapter.Name, StringComparer.Ordinal)
+            .Select(adapter => $"{adapter.Id}|{adapter.Type}|{adapter.ConnectionSignature}"));
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(signature)));
+    }
+
     private static readonly string[] BuiltInTunnelMarkers =
     {
         "teredo",

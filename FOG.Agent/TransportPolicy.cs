@@ -13,6 +13,8 @@ public static class TransportPolicy
     public static bool ShouldProbeBeforeEngine([NotNullWhen(true)] NetworkAdapterInfo? activeTunnel) =>
         activeTunnel is not null;
 
+    public static bool CanRememberEngineProfile(NetworkAdapterInfo? activeTunnel) => activeTunnel is null;
+
     public static bool CanUseDirectMode(
         NetworkAdapterInfo? activeTunnel,
         IReadOnlyCollection<ProbeResult> probes,

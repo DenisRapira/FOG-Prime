@@ -10,18 +10,12 @@ public sealed class RuntimeIntegrityVerifier(IOptions<AgentOptions> options)
 {
     private const string TrustedManifestResource = "FOG.Agent.TrustedRuntimeManifest.json";
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private bool _verified;
 
     public async Task VerifyAsync(CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            if (_verified)
-            {
-                return;
-            }
-
             var trustedBytes = await ReadTrustedManifestAsync(cancellationToken);
             var manifestPath = options.Value.ResolveFromBase(options.Value.ManifestPath);
             var externalBytes = await File.ReadAllBytesAsync(manifestPath, cancellationToken);
@@ -59,7 +53,6 @@ public sealed class RuntimeIntegrityVerifier(IOptions<AgentOptions> options)
                 }
             }
 
-            _verified = true;
         }
         finally
         {

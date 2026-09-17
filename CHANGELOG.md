@@ -4,6 +4,26 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-18
+
+- Added bounded automatic profile selection with best-observed-profile rollback.
+- Preserve connected Discord sessions when only ancillary HTTP checks fail.
+- Separate desktop Gateway and voice connection evidence; screen sharing does
+  not count as a working voice connection. No Discord credentials are accessed.
+- Updated target-scoped Discord/YouTube strategy and pinned packet samples.
+- Keep verified profile memory tied to the network and profile catalog; do not
+  save VPN-assisted checks as proof of an independently working Engine profile.
+- Wake the first health check directly after Engine launch instead of waiting
+  for a periodic timer. Existing network deadlines remain unchanged.
+- Added a frameless phosphor interface, state-aware connection animation,
+  reduced-motion support, background animation pause and WebView2 recovery.
+- Hardened IPC server identity checks and process cleanup through a Windows job.
+- Added 48 automated checks and browser UI tests at three window sizes.
+- Updated dependencies, locked packaging and third-party provenance records.
+
+Connection availability remains network-dependent. Probe success does not prove
+voice audibility or video playback; EAC compatibility is not guaranteed.
+
 ## [0.1.9] - 2026-08-13
 
 - Starts FOG Engine before network qualification completes, returning control

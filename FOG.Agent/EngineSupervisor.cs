@@ -20,6 +20,11 @@ public sealed class EngineSupervisor(
     ILogger<EngineSupervisor> logger)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly SessionRecoveryPolicy _sessionRecovery = new();
+    private readonly HealthRefreshSignal _healthRefresh = new();
+    private readonly ProfileSearch _profileSearch = new();
+    private DateTimeOffset _qualificationStartedAt;
+    private DateTimeOffset _nextProfileSearchAt;
     private EngineInstance? _engine;
     private EngineProfile? _activeProfile;
     private IReadOnlyList<ProbeResult> _lastProbes = Array.Empty<ProbeResult>();
@@ -44,10 +49,14 @@ public sealed class EngineSupervisor(
     private DateTimeOffset _lastProbeLogAt;
     private bool _preferredProfileLoaded;
     private string? _rememberedProfileId;
+    private string? _preferredContext;
     private bool _startupQualificationPending;
     private int _startupQualificationFailures;
     private DateTimeOffset _nextStartupQualificationAt;
     private readonly HashSet<string> _startupAttemptedProfiles = new(StringComparer.OrdinalIgnoreCase);
+
+    internal Task WaitForHealthRefreshAsync(TimeSpan interval, CancellationToken cancellationToken) =>
+        _healthRefresh.WaitAsync(interval, cancellationToken);
 
     public async Task<AgentSnapshot> StartBestAsync(CancellationToken cancellationToken)
     {
@@ -59,7 +68,7 @@ public sealed class EngineSupervisor(
             if (IsRunning)
             {
                 logger.LogInformation("FOG Engine is already running; preserving the active session");
-                return CreateSnapshot(CurrentState);
+                return await RefreshHealthInternalAsync(cancellationToken);
             }
 
             ResetStartupCycle();
@@ -68,7 +77,7 @@ public sealed class EngineSupervisor(
             LogTunnelInfo(tunnel, nameof(StartBestAsync));
             if (TransportPolicy.ShouldProbeBeforeEngine(tunnel))
             {
-                _lastProbes = await healthChecker.CheckStartupAsync(cancellationToken);
+                _lastProbes = await healthChecker.CheckDirectAsync(cancellationToken);
                 LogProbeResults(_lastProbes, nameof(StartBestAsync));
                 if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes))
                 {
@@ -271,7 +280,7 @@ public sealed class EngineSupervisor(
             {
                 _lastProbes = IsRunning
                     ? _startupQualificationPending
-                        ? await healthChecker.CheckStartupAsync(cancellationToken)
+                        ? await healthChecker.CheckStartupAsync(cancellationToken, confirm: _startupQualificationFailures > 0)
                         : await healthChecker.CheckAsync(cancellationToken)
                     : await healthChecker.CheckDirectAsync(cancellationToken);
                 LogProbeResults(_lastProbes, nameof(RecoverIfNeededAsync));
@@ -351,7 +360,7 @@ public sealed class EngineSupervisor(
         }
 
         _lastProbes = _startupQualificationPending
-            ? await healthChecker.CheckStartupAsync(cancellationToken)
+            ? await healthChecker.CheckStartupAsync(cancellationToken, confirm: _startupQualificationFailures > 0)
             : await healthChecker.CheckAsync(cancellationToken);
         LogProbeResults(_lastProbes, nameof(RefreshHealthInternalAsync));
         return await ApplyEngineProbeResultsAsync(
@@ -363,16 +372,28 @@ public sealed class EngineSupervisor(
         string stableSessionMessage,
         CancellationToken cancellationToken)
     {
+        _lastProbes = _profileSearch.IncludeVoiceRequirement(_lastProbes);
         if (_lastProbes.Count > 0 && _lastProbes.All(probe => probe.Ok))
         {
+            _sessionRecovery.Observe(true, DateTimeOffset.UtcNow);
             driverBackoff.Reset();
             if (_activeProfile is { } activeProfile)
             {
                 RememberSuccessfulProfile(activeProfile.Id);
             }
             CompleteStartupQualification();
+            _profileSearch.Reset();
             UpdateCompatibility();
             return CreateSnapshot("ready");
+        }
+
+        if (ProfileSearch.PreserveConnectedClient(_lastProbes))
+        {
+            _sessionRecovery.Observe(true, DateTimeOffset.UtcNow);
+            CompleteStartupQualification();
+            _profileSearch.Reset();
+            logger.LogInformation("Desktop Discord and YouTube are connected; preserving profile despite ancillary HTTP failure");
+            return CreateSnapshot("degraded");
         }
 
         if (_startupQualificationPending && _activeProfile is { } pendingProfile)
@@ -388,7 +409,14 @@ public sealed class EngineSupervisor(
                 return CreateSnapshot("recovering");
             }
 
+            if (_profileSearch.VoiceRequired && DateTimeOffset.UtcNow - _qualificationStartedAt < TimeSpan.FromSeconds(30))
+            {
+                _nextStartupQualificationAt = DateTimeOffset.UtcNow + TransportPolicy.InitialHealthInterval;
+                return CreateSnapshot("recovering");
+            }
+
             _startupAttemptedProfiles.Add(pendingProfile.Id);
+            _profileSearch.Record(pendingProfile.Id, _lastProbes);
             if (TransportPolicy.ShouldRotatePendingProfile(
                 IsRunning,
                 _startupQualificationFailures,
@@ -405,13 +433,36 @@ public sealed class EngineSupervisor(
                 return await StartBestInternalAsync(cancellationToken);
             }
 
-            logger.LogWarning(
-                "All profiles were qualified once without a complete probe set; keeping the last live Engine and stopping rotation");
+            var best = _profileSearch.Best(pendingProfile.Id);
+            if (best is not null && !best.Equals(pendingProfile.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogWarning("No complete profile found; restoring best observed profile {ProfileId}", best);
+                await StopInternalAsync(cancellationToken);
+                await integrityVerifier.VerifyAsync(cancellationToken);
+                StartProfile(catalog.All.Single(p => p.Id.Equals(best, StringComparison.OrdinalIgnoreCase)));
+                _lastProbes = Array.Empty<ProbeResult>();
+            }
+            logger.LogWarning("Profile search exhausted; retaining best available profile and delaying the next search");
+            _nextProfileSearchAt = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(5);
             CompleteStartupQualification();
             UpdateCompatibility();
             return CreateSnapshot("degraded");
         }
 
+        if (_desiredRunning && DateTimeOffset.UtcNow >= _nextProfileSearchAt && _activeProfile is { } failedProfile &&
+            _sessionRecovery.Observe(false, DateTimeOffset.UtcNow))
+        {
+            ForgetPreferredProfile(failedProfile.Id);
+            profileRotation.MovePast(failedProfile.Id, catalog.All);
+            logger.LogWarning("Persistent connectivity failure; starting bounded recovery from profile {ProfileId}", failedProfile.Id);
+            await StopInternalAsync(cancellationToken);
+            var failedProbes = _lastProbes;
+            ResetStartupCycle();
+            _profileSearch.IncludeVoiceRequirement(failedProbes);
+            _profileSearch.Record(failedProfile.Id, failedProbes);
+            _startupAttemptedProfiles.Add(failedProfile.Id);
+            return await StartBestInternalAsync(cancellationToken);
+        }
         logger.LogInformation(stableSessionMessage);
         return CreateSnapshot("degraded");
     }
@@ -421,8 +472,10 @@ public sealed class EngineSupervisor(
         _activeProfile = profile;
         _startupQualificationPending = true;
         _startupQualificationFailures = 0;
+        _qualificationStartedAt = DateTimeOffset.UtcNow;
         _nextStartupQualificationAt = DateTimeOffset.UtcNow + TransportPolicy.InitialHealthInterval;
         _lastProbes = Array.Empty<ProbeResult>();
+        _healthRefresh.Request();
     }
 
     private void CompleteStartupQualification()
@@ -441,12 +494,22 @@ public sealed class EngineSupervisor(
     private void ResetStartupCycle()
     {
         CompleteStartupQualification();
+        _profileSearch.Reset();
+        _nextProfileSearchAt = default;
         _lastProbes = Array.Empty<ProbeResult>();
     }
 
     private async Task<AgentSnapshot> StartBestInternalAsync(CancellationToken cancellationToken)
     {
         UpdateCompatibility();
+        if (!_desiredRunning)
+        {
+            return CreateSnapshot("stopped");
+        }
+        if (driverBackoff.TryGetActivePause(DateTimeOffset.UtcNow, out _))
+        {
+            return CreateSnapshot("recovering");
+        }
         if (await DeferToActiveTunnelAsync(cancellationToken) is { } initialTunnelSnapshot)
         {
             return initialTunnelSnapshot;
@@ -465,9 +528,16 @@ public sealed class EngineSupervisor(
         await winDivertService.StopOwnedAsync(cancellationToken);
 
         LoadPreferredProfile();
-        var orderedProfiles = profileRotation.Order(catalog.All);
+        var orderedProfiles = profileRotation.Order(catalog.All)
+            .Where(profile => !_startupAttemptedProfiles.Contains(profile.Id));
         foreach (var profile in orderedProfiles)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_desiredRunning)
+            {
+                return CreateSnapshot("stopped");
+            }
+            _startupAttemptedProfiles.Add(profile.Id);
             logger.LogInformation("Trying profile {ProfileId} with priority {Priority}", profile.Id, profile.Priority);
             await StopInternalAsync(cancellationToken);
             if (await DeferToActiveTunnelAsync(cancellationToken) is { } tunnelSnapshot)
@@ -554,7 +624,7 @@ public sealed class EngineSupervisor(
 
         _directMode = false;
         _waitingForTunnel = false;
-        _lastProbes = await healthChecker.CheckStartupAsync(cancellationToken);
+        _lastProbes = await healthChecker.CheckDirectAsync(cancellationToken);
         LogProbeResults(_lastProbes, nameof(ReevaluateTunnelAsync));
         if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
         {
@@ -693,6 +763,7 @@ public sealed class EngineSupervisor(
             executable);
 
         var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Engine process could not be created.");
+        healthChecker.BeginProfileObservation();
         var instance = new EngineInstance(
             process,
             profile.Id,
@@ -908,13 +979,16 @@ public sealed class EngineSupervisor(
 
     private void LoadPreferredProfile()
     {
-        if (_preferredProfileLoaded)
+        var context = GetPreferredContext();
+        if (_preferredProfileLoaded && _preferredContext == context)
         {
             return;
         }
 
         _preferredProfileLoaded = true;
-        var state = preferredProfileStore.TryLoad();
+        _preferredContext = context;
+        _rememberedProfileId = null;
+        var state = preferredProfileStore.TryLoad(context);
         var profile = state is null
             ? null
             : catalog.All.FirstOrDefault(candidate =>
@@ -938,12 +1012,16 @@ public sealed class EngineSupervisor(
 
     private void RememberSuccessfulProfile(string profileId)
     {
-        if (string.Equals(_rememberedProfileId, profileId, StringComparison.OrdinalIgnoreCase))
+        // A VPN can carry the successful probes without validating this Engine profile.
+        if (!TransportPolicy.CanRememberEngineProfile(tunnelDetector.FindActiveTunnel())) return;
+        var context = GetPreferredContext();
+        if (_preferredContext == context && string.Equals(_rememberedProfileId, profileId, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
-        preferredProfileStore.Save(profileId);
+        preferredProfileStore.Save(profileId, context);
+        _preferredContext = context;
         _rememberedProfileId = profileId;
         _preferredProfileLoaded = true;
         logger.LogInformation("Remembered working profile {ProfileId} for the next launch", profileId);
@@ -959,6 +1037,13 @@ public sealed class EngineSupervisor(
         preferredProfileStore.Clear();
         _rememberedProfileId = null;
         logger.LogInformation("Remembered profile {ProfileId} is no longer ready; reserve selection is enabled", profileId);
+    }
+
+    private string GetPreferredContext()
+    {
+        var profiles = System.Text.Json.JsonSerializer.Serialize(catalog.All);
+        var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(profiles)));
+        return tunnelDetector.GetNetworkIdentity() + ":" + digest;
     }
 
     private AgentSnapshot CreateSnapshot(string state)

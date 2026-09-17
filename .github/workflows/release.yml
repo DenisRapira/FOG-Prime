@@ -64,4 +64,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: powershell
-        run: gh release create "$env:GITHUB_REF_NAME" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.zip" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256" --verify-tag --generate-notes --title "FOG Prime $env:GITHUB_REF_NAME"
+        run: |
+          gh release view "$env:GITHUB_REF_NAME" --json id 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'Release already exists; preserving its tested assets.'
+            exit 0
+          }
+          $notes = "docs/RELEASE-${{ steps.version.outputs.value }}.md"
+          if (Test-Path $notes) {
+            gh release create "$env:GITHUB_REF_NAME" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.zip" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256" --verify-tag --notes-file $notes --title "FOG Prime $env:GITHUB_REF_NAME"
+          } else {
+            gh release create "$env:GITHUB_REF_NAME" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.zip" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256" --verify-tag --generate-notes --title "FOG Prime $env:GITHUB_REF_NAME"
+          }

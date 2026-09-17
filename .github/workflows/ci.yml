@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, eac-compatibility]
   pull_request:
   workflow_dispatch:
 
@@ -21,7 +21,7 @@ jobs:
         run: dotnet restore FOG.Prime.sln --locked-mode
       - name: Build
         run: dotnet build FOG.Prime.sln -c Release --no-restore
-      - name: EAC compatibility tests
+      - name: Agent policy, IPC and process lifecycle tests
         run: dotnet run --project FOG.Agent.Tests/FOG.Agent.Tests.csproj -c Release --no-build
       - name: Verify repository
         shell: powershell

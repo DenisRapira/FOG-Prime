@@ -29,6 +29,9 @@ public partial class MainWindow : Window
     private bool _shutdownInProgress;
     private bool _autoStartRequested;
     private Uri? _pendingUpdatePage;
+    private CoreWebView2? _webView;
+    private bool _recoveringBrowser;
+    private int _browserRecoveryAttempts;
 
     public MainWindow()
     {
@@ -36,6 +39,10 @@ public partial class MainWindow : Window
         Loaded += OnLoaded;
         Closing += OnClosing;
     }
+
+    private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
     private async void OnClosing(object? sender, CancelEventArgs e)
     {
@@ -58,18 +65,13 @@ public partial class MainWindow : Window
         {
             await _agentClient.ShutdownAsync(timeout.Token);
         }
+        catch (Exception ex)
+        {
+            DiagnosticLog.Write("UI", "Agent shutdown failed", ex);
+        }
         finally
         {
-            if (Browser.CoreWebView2 is not null)
-            {
-                Browser.CoreWebView2.NavigationCompleted -= OnInitialNavigationCompleted;
-                Browser.CoreWebView2.NavigationStarting -= OnNavigationStarting;
-                Browser.CoreWebView2.NewWindowRequested -= OnNewWindowRequested;
-                Browser.CoreWebView2.PermissionRequested -= OnPermissionRequested;
-                Browser.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
-            }
-
-            Browser.Dispose();
+            DisposeBrowser();
             _updateChecker.Dispose();
             _monitorCancellation.Dispose();
             _shutdownComplete = true;
@@ -81,13 +83,28 @@ public partial class MainWindow : Window
     {
         try
         {
+            await InitializeBrowserAsync();
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLog.Write("UI", "WebView2 initialization failed", ex);
+            ShowBrowserFailure();
+        }
+    }
+
+    private async Task InitializeBrowserAsync()
+    {
             var userDataFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "FOG Prime",
                 "WebView2Profile");
 
             var environment = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
+            if (_shutdownInProgress) return;
             await Browser.EnsureCoreWebView2Async(environment);
+            if (_shutdownInProgress) return;
+            _webView = Browser.CoreWebView2;
+            _webView.ProcessFailed += OnBrowserProcessFailed;
             Browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             Browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
             Browser.CoreWebView2.Settings.AreHostObjectsAllowed = false;
@@ -103,17 +120,84 @@ public partial class MainWindow : Window
             using var reader = new StreamReader(stream, Encoding.UTF8);
             Browser.NavigateToString(await reader.ReadToEndAsync());
             DiagnosticLog.Write("UI", "WebView2 interface initialized");
+    }
+
+    private void DisposeBrowser()
+    {
+        // The control's CoreWebView2 getter itself throws after a browser crash.
+        var webView = _webView;
+        _webView = null;
+        try
+        {
+            if (webView is not null)
+            {
+                webView.ProcessFailed -= OnBrowserProcessFailed;
+                webView.NavigationCompleted -= OnInitialNavigationCompleted;
+                webView.NavigationStarting -= OnNavigationStarting;
+                webView.NewWindowRequested -= OnNewWindowRequested;
+                webView.PermissionRequested -= OnPermissionRequested;
+                webView.WebMessageReceived -= OnWebMessageReceived;
+            }
+        }
+        catch (Exception ex) { DiagnosticLog.Write("UI", "WebView2 event cleanup failed", ex); }
+        finally
+        {
+            try { Browser.Dispose(); }
+            catch (Exception ex) { DiagnosticLog.Write("UI", "WebView2 disposal failed", ex); }
+        }
+    }
+
+    private void OnBrowserProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
+    {
+        if (!ReferenceEquals(sender, _webView) || _shutdownInProgress) return;
+        DiagnosticLog.Write("UI", $"WebView2 process failure: kind={e.ProcessFailedKind}; reason={e.Reason}; exit={e.ExitCode}");
+        if (e.ProcessFailedKind is CoreWebView2ProcessFailedKind.BrowserProcessExited
+            or CoreWebView2ProcessFailedKind.RenderProcessExited
+            or CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
+            _ = RecoverBrowserAsync();
+    }
+
+    private async Task RecoverBrowserAsync()
+    {
+        if (_shutdownInProgress || _recoveringBrowser) return;
+        _recoveringBrowser = true;
+        try
+        {
+            if (++_browserRecoveryAttempts > 2)
+            {
+                ShowBrowserFailure();
+                return;
+            }
+            // Yield out of WebView2 event dispatch before disposing its controller.
+            await System.Windows.Threading.Dispatcher.Yield();
+            if (_shutdownInProgress) return;
+            var parent = (System.Windows.Controls.Grid)Browser.Parent;
+            DisposeBrowser();
+            parent.Children.Remove(Browser);
+            Browser = new Microsoft.Web.WebView2.Wpf.WebView2
+            {
+                DefaultBackgroundColor = System.Drawing.Color.FromArgb(16, 18, 18)
+            };
+            System.Windows.Controls.Grid.SetRow(Browser, 1);
+            parent.Children.Add(Browser);
+            await InitializeBrowserAsync();
+            DiagnosticLog.Write("UI", "WebView2 recreated; existing Agent session preserved");
         }
         catch (Exception ex)
         {
-            DiagnosticLog.Write("UI", "WebView2 initialization failed", ex);
-            MessageBox.Show(
-                "Не удалось запустить интерфейс FOG Prime. Установите Microsoft Edge WebView2 Runtime и повторите запуск.",
-                "FOG Prime",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-            Close();
+            DiagnosticLog.Write("UI", "WebView2 recovery failed", ex);
+            if (!_shutdownInProgress) ShowBrowserFailure();
         }
+        finally { _recoveringBrowser = false; }
+    }
+
+    private void ShowBrowserFailure()
+    {
+        if (_shutdownInProgress) return;
+        MessageBox.Show(this,
+            "Не удалось восстановить интерфейс FOG. Приложение будет закрыто. Подробности сохранены в журнале.",
+            "FOG Prime", MessageBoxButton.OK, MessageBoxImage.Error);
+        Close();
     }
 
     private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -125,6 +209,12 @@ public partial class MainWindow : Window
 
             switch (command)
             {
+                case "ready" when _primeStarted:
+                    var status = await _agentClient.SendAsync("status", _monitorCancellation.Token);
+                    await RenderSnapshotAsync(status.Snapshot, null);
+                    if (_pendingUpdatePage is not null)
+                        _ = CheckForUpdatesAsync(_monitorCancellation.Token);
+                    break;
                 case "ready" when !_primeStarted:
                     _primeStarted = true;
                     await RunPrimeAsync(autoStart: !IsAutoStartDisabled());
@@ -272,18 +362,36 @@ public partial class MainWindow : Window
         {
             await PostAsync("prime", new PrimePayload(
                 tunnelActive ? "vpnReady" : "ready",
-                tunnelActive ? "VPN и связь готовы" : "Все готово",
+                tunnelActive ? "Доступ через VPN" : "FOG подключён",
                 tunnelActive
                     ? "FOG не меняет VPN и проверяет доступ автоматически."
-                    : "FOG работает. Можно пользоваться связью.",
+                    : "Discord и YouTube отвечают. Голосовой канал проверяется в Discord.",
                 100,
                 diagnostics,
                 checks));
             return;
         }
 
+        if (snapshot?.State == "degraded")
+        {
+            var failed = snapshot.Probes.Where(probe => !probe.Ok)
+                .Select(probe => probe.Name switch
+                {
+                    "gateway" or "discord.com" or "discord-client" => "Discord",
+                    "discord-voice" => "голос Discord",
+                    "cdn.discordapp.com" => "файлы Discord",
+                    "www.youtube.com" => "YouTube",
+                    "dns" => "DNS",
+                    _ => "сеть"
+                }).Distinct();
+            await PostAsync("prime", new PrimePayload("needsAttention", "Доступ ограничен",
+                $"Не удалось подтвердить доступ: {string.Join(", ", failed)}. FOG повторит проверку автоматически.",
+                72, diagnostics, checks));
+            return;
+        }
+
         await PostAsync("prime", new PrimePayload(
-            engineActive ? "checking" : "recovering",
+            snapshot?.State == "degraded" ? "needsAttention" : engineActive ? "checking" : "recovering",
             tunnelActive ? "Проверяем соединение" : "Подключаем",
             tunnelActive
                 ? "Проверяем доступ через активное подключение."
@@ -366,13 +474,17 @@ public partial class MainWindow : Window
 
     private async Task PostAsync(string type, object payload)
     {
-        if (Browser.CoreWebView2 is null)
-        {
-            return;
-        }
-
         var envelope = JsonSerializer.Serialize(new { type, payload }, _json);
-        await Dispatcher.InvokeAsync(() => Browser.CoreWebView2.PostWebMessageAsJson(envelope));
+        await Dispatcher.InvokeAsync(() =>
+        {
+            if (_shutdownInProgress || _webView is null) return;
+            try { _webView.PostWebMessageAsJson(envelope); }
+            catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException)
+            {
+                DiagnosticLog.Write("UI", "WebView2 message delivery failed", ex);
+                _ = RecoverBrowserAsync();
+            }
+        });
     }
 
     private static void AddCheck(List<CheckItem> checks, string name, bool ok, string detail, string failDetail)

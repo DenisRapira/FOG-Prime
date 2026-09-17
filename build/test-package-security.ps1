@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 $package = (Resolve-Path $PackageDirectory).Path
 $tempRoot = Join-Path $env:TEMP ("fog-prime-security-" + [guid]::NewGuid().ToString("N"))
-$pipeName = "fog-prime-agent-v3"
+$pipeName = "fog-prime-session-" + [guid]::NewGuid().ToString("N")
 
 function New-SessionToken {
     $bytes = New-Object byte[] 32
@@ -51,6 +51,7 @@ function Start-TestAgent([string]$path, [string]$token) {
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
     $info.Environment["FOG_PRIME_SESSION_TOKEN"] = $token
+    $info.Environment["FOG_PRIME_PIPE_NAME"] = $pipeName
     return [Diagnostics.Process]::Start($info)
 }
 
@@ -73,7 +74,9 @@ function Send-AgentRequest([string]$command, [string]$token, [int]$connectTimeou
             } | ConvertTo-Json -Compress
             $writer.WriteLine($request)
             $writer.Flush()
-            $response = $reader.ReadLine() | ConvertFrom-Json
+            $pendingResponse = $reader.ReadLineAsync()
+            if (-not $pendingResponse.Wait(10000)) { throw 'Agent response deadline exceeded.' }
+            $response = $pendingResponse.GetAwaiter().GetResult() | ConvertFrom-Json
             if ($response.ok -and $response.correlationId -ne $correlation) {
                 throw "Agent returned a mismatched correlation ID."
             }
@@ -96,6 +99,7 @@ function Assert-AgentRejectsStartup([string]$path, [string]$description) {
         if (-not $agent.WaitForExit(8000)) {
             throw "$description did not stop the Agent."
         }
+        if ($agent.ExitCode -eq 0) { throw "$description exited without an integrity failure." }
     }
     finally {
         if (-not $agent.HasExited) {
@@ -108,6 +112,9 @@ function Assert-AgentRejectsStartup([string]$path, [string]$description) {
 
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
 try {
+    if (Get-Process -Name 'FOG Prime' -ErrorAction SilentlyContinue) {
+        throw 'Close FOG before package security testing: the single-instance guard would invalidate the UI test.'
+    }
     $baseline = New-TestPackage "baseline"
     $token = New-SessionToken
     $agent = Start-TestAgent $baseline $token
@@ -152,6 +159,13 @@ try {
     Assert-AgentRejectsStartup $runtimeTamper "Modified runtime file"
     Write-Host "PASS: modified runtime file rejected"
 
+    if (Test-Path -LiteralPath (Join-Path $package 'runtime/ACTIVE_DISCORD_UDP.bin')) {
+        $payloadTamper = New-TestPackage 'payload-tamper'
+        Add-Content -LiteralPath (Join-Path $payloadTamper 'runtime/ACTIVE_DISCORD_UDP.bin') -Value 'tamper'
+        Assert-AgentRejectsStartup $payloadTamper 'Modified voice packet payload'
+        Write-Host 'PASS: modified voice packet payload rejected'
+    }
+
     $agentTamper = New-TestPackage "agent-tamper"
     Add-Content -LiteralPath (Join-Path $agentTamper "FOG.Agent.exe") -Value "tamper"
     $ui = Start-Process -FilePath (Join-Path $agentTamper "FOG Prime.exe") -WorkingDirectory $agentTamper -WindowStyle Hidden -PassThru
@@ -178,5 +192,10 @@ try {
 }
 finally {
     Stop-TestProcesses
+    $expectedTemp = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+    if (-not ([IO.Path]::GetFullPath($tempRoot)).StartsWith($expectedTemp, [StringComparison]::OrdinalIgnoreCase) -or
+        -not ([IO.Path]::GetFileName($tempRoot)).StartsWith('fog-prime-security-')) {
+        throw 'Unsafe security-test cleanup path.'
+    }
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

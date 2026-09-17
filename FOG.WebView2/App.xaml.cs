@@ -9,13 +9,41 @@ namespace FOG.WebView2;
 /// </summary>
 public partial class App : Application
 {
+    private Mutex? _instanceMutex;
+    private bool _ownsInstance;
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        _instanceMutex = new Mutex(false, @"Local\FOG.Prime.Desktop");
+        try
+        {
+            _ownsInstance = _instanceMutex.WaitOne(0);
+        }
+        catch (AbandonedMutexException)
+        {
+            _ownsInstance = true;
+        }
+        if (!_ownsInstance)
+        {
+            MessageBox.Show("FOG уже запущен. Используйте открытое окно приложения.", "FOG", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
         DiagnosticLog.BeginSession();
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         base.OnStartup(e);
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        if (_ownsInstance)
+        {
+            _instanceMutex?.ReleaseMutex();
+        }
+        _instanceMutex?.Dispose();
+        base.OnExit(e);
     }
 
     private static void OnDispatcherUnhandledException(

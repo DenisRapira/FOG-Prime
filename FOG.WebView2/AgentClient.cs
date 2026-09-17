@@ -16,6 +16,8 @@ internal sealed class AgentClient
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly SemaphoreSlim _startupGate = new(1, 1);
     private readonly string _sessionToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+    private readonly string _pipeName = "fog-prime-session-" + Guid.NewGuid().ToString("N");
+    private ProcessLifetimeJob? _processJob;
     private readonly string _agentPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "FOG.Agent.exe"));
     private readonly string _enginePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "runtime", "FOG.Engine.exe"));
     private Process? _spawnedAgent;
@@ -58,6 +60,8 @@ internal sealed class AgentClient
         _spawnedAgent?.Dispose();
         _spawnedAgent = null;
         _consecutiveAuthenticationFailures = 0;
+        _processJob?.Dispose();
+        _processJob = null;
     }
 
     private async Task EnsureAvailableAsync(CancellationToken cancellationToken)
@@ -115,8 +119,22 @@ internal sealed class AgentClient
                     StandardErrorEncoding = new UTF8Encoding(false)
                 };
                 startInfo.Environment["FOG_PRIME_SESSION_TOKEN"] = _sessionToken;
+                startInfo.Environment[AgentProtocol.SessionPipeEnvironment] = _pipeName;
+                _processJob ??= new ProcessLifetimeJob();
                 _spawnedAgent = Process.Start(startInfo)
                     ?? throw new InvalidOperationException("FOG Prime Agent could not be started.");
+                try
+                {
+                    // No Engine-start command is sent before lifecycle ownership is established.
+                    _processJob.Attach(_spawnedAgent);
+                }
+                catch
+                {
+                    TryTerminate(_spawnedAgent);
+                    _spawnedAgent.Dispose();
+                    _spawnedAgent = null;
+                    throw;
+                }
                 AttachDiagnostics(_spawnedAgent);
                 DiagnosticLog.Write("UI", $"Agent process started; pid={_spawnedAgent.Id}");
             }
@@ -201,10 +219,16 @@ internal sealed class AgentClient
     {
         await using var pipe = new NamedPipeClientStream(
             ".",
-            AgentProtocol.PipeName,
+            _pipeName,
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
         await pipe.ConnectAsync(connectTimeoutMs, cancellationToken);
+        var expectedAgent = _spawnedAgent;
+        if (expectedAgent is null || expectedAgent.HasExited)
+        {
+            throw new InvalidDataException("Agent session is not active.");
+        }
+        PipeServerIdentity.Verify(pipe, expectedAgent.Id);
         await using var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
         using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
         var request = new AgentRequest(command, Guid.NewGuid().ToString("N"), _sessionToken);

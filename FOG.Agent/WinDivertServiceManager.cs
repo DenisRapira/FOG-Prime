@@ -108,8 +108,15 @@ public sealed class WinDivertServiceManager(
     {
         try
         {
-            return ServiceController.GetServices()
-                .Any(service => string.Equals(service.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase));
+            var services = ServiceController.GetServices();
+            try
+            {
+                return services.Any(service => string.Equals(service.ServiceName, serviceName, StringComparison.OrdinalIgnoreCase));
+            }
+            finally
+            {
+                foreach (var service in services) service.Dispose();
+            }
         }
         catch (Exception)
         {

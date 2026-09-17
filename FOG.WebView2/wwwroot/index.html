@@ -4,15 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>FOG Prime</title>
+  <title>FOG Prime 2.0</title>
   <style>
     :root {
-      --pink: #f50db4;
-      --black: #000000;
-      --off-black: #222222;
-      --white: #ffffff;
-      --wire: #f2f2f2;
-      --blush: #fef4ff;
+      color-scheme: dark;
+      --pink: #7fee64;
+      --black: #ddffdc;
+      --off-black: #8cab87;
+      --white: #101212;
+      --wire: #303630;
+      --blush: #181c18;
     }
 
     * {
@@ -36,7 +37,7 @@
 
     body {
       min-height: 100vh;
-      overflow: hidden;
+      overflow: auto;
     }
 
     .app {
@@ -44,7 +45,7 @@
       grid-template-rows: auto minmax(0, 1fr) auto;
       width: 100%;
       height: 100vh;
-      min-height: 680px;
+      min-height: 600px;
       border: 1px solid var(--wire);
     }
 
@@ -99,7 +100,7 @@
 
     .main {
       display: grid;
-      grid-template-rows: auto minmax(310px, 1fr) auto;
+      grid-template-rows: auto minmax(260px, 1fr) auto;
       min-height: 0;
     }
 
@@ -122,9 +123,9 @@
       margin: 0;
       color: var(--black);
       font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-      font-size: 32px;
-      line-height: 1;
-      font-weight: 700;
+      font-size: 28px;
+      line-height: 1.2;
+      font-weight: 500;
       letter-spacing: 0;
     }
 
@@ -140,8 +141,8 @@
       position: relative;
       display: grid;
       align-content: center;
-      gap: 34px;
-      padding: 34px 54px;
+      gap: 12px;
+      padding: 24px 32px;
       background: var(--white);
       border-bottom: 1px solid var(--wire);
     }
@@ -151,7 +152,7 @@
       position: absolute;
       top: 50%;
       left: 50%;
-      width: 1px;
+      width: 0;
       height: 240px;
       background: var(--wire);
       transform: translate(-50%, -50%);
@@ -161,10 +162,11 @@
       position: relative;
       z-index: 1;
       display: grid;
-      grid-template-columns: 48px minmax(0, 1fr) 56px;
+      grid-template-columns: 40px minmax(0, 1fr) 64px;
       align-items: center;
       min-height: 72px;
-      border: 1px solid var(--wire);
+      border: 0;
+      border-bottom: 1px solid var(--wire);
       background: var(--white);
       transition: border-color 220ms ease-out, background-color 220ms ease-out, color 220ms ease-out;
     }
@@ -222,15 +224,15 @@
     }
 
     .stage.done .stage-index {
-      border-color: var(--black);
-      background: var(--black);
-      color: var(--white);
+      border-color: var(--wire);
+      background: transparent;
+      color: var(--black);
     }
 
     .stage.done .stage-state {
-      border-color: var(--pink);
-      background: var(--pink);
-      color: var(--white);
+      border-color: var(--wire);
+      background: transparent;
+      color: var(--black);
     }
 
     .stage.failed {
@@ -325,7 +327,7 @@
       display: grid;
       place-items: center;
       padding: 24px;
-      background: rgba(255, 255, 255, 0.82);
+      background: rgba(0, 0, 0, 0.82);
       backdrop-filter: blur(8px);
     }
 
@@ -427,20 +429,196 @@
         min-height: 64px;
       }
     }
+    .header, .hero, .flow, .result, .footer {
+      animation: enter 500ms cubic-bezier(.2,.8,.2,1) both;
+    }
+    .hero { animation-delay: 60ms; }
+    .flow { animation-delay: 120ms; }
+    .result, .footer { animation-delay: 180ms; }
+    h1, .dialog-title { font-family: "Segoe UI", sans-serif; }
+    .wordmark { font-family: "Segoe UI", sans-serif; font-size: 22px; font-weight: 600; }
+    .wordmark span { font-size: 10px; color: var(--off-black); }
+    .stage-note, .result-label, .footer { color: var(--off-black); }
+    .stage { position: relative; overflow: hidden; }
+    .stage::after {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 2px;
+      width: 32%;
+      background: var(--pink);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .stage.active::after { opacity: .8; animation: scan 2.2s ease-in-out infinite; }
+    .stage.done { border-color: var(--wire); }
+    .stage.done .stage-state { animation: confirmed 420ms ease-out; }
+    .signal {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      height: 48px;
+      width: 64px;
+      margin: 0 auto 20px;
+    }
+    .signal span {
+      display: block;
+      width: 7px;
+      height: 32px;
+      background: var(--pink);
+      transform: scaleY(.3);
+      transform-origin: center;
+      animation: signal-search 1.6s ease-in-out infinite;
+      transition: transform 500ms ease-out, background-color 300ms ease-out;
+    }
+    .signal span:nth-child(2) { animation-delay: 160ms; }
+    .signal span:nth-child(3) { animation-delay: 320ms; }
+    .connection-map {
+      position: relative;
+      display: grid;
+      place-items: center;
+      width: 248px;
+      max-width: 100%;
+      height: 76px;
+      margin: 0 auto 20px;
+      isolation: isolate;
+    }
+    .connection-map .signal { margin: 0; background: var(--white); width: 64px; z-index: 2; }
+    .route {
+      --packet-travel: 200px;
+      position: absolute;
+      inset: 22px 12px;
+      border: 1px solid #3e4a3c;
+      border-radius: 8px;
+      transition: border-color 300ms ease-out, opacity 300ms ease-out;
+    }
+    .route-secondary { --packet-travel: 152px; inset: 8px 36px; opacity: .5; }
+    .route::before, .route::after {
+      content: "";
+      position: absolute;
+      width: 22px;
+      height: 2px;
+      background: var(--off-black);
+      animation: route-packet 2.8s ease-in-out infinite;
+    }
+    .route::before { top: -1px; left: 0; }
+    .route::after { bottom: -1px; left: 0; animation-direction: reverse; animation-delay: -1.4s; }
+    .route-secondary::before, .route-secondary::after { animation-delay: -.7s; }
+    .route-node {
+      position: absolute;
+      top: 32px;
+      width: 12px;
+      height: 12px;
+      border: 1px solid var(--off-black);
+      background: var(--white);
+      z-index: 3;
+      transition: border-color 300ms ease-out, background-color 300ms ease-out;
+    }
+    .route-node:first-child { left: 6px; }
+    .route-node:last-child { right: 6px; }
+    body[data-status="ready"] .route,
+    body[data-status="vpnReady"] .route { border-color: #677d64; }
+    body[data-status="ready"] .route::before, body[data-status="ready"] .route::after,
+    body[data-status="vpnReady"] .route::before, body[data-status="vpnReady"] .route::after { animation-duration: 6s; }
+    body[data-status="ready"] .route-node,
+    body[data-status="vpnReady"] .route-node { background: var(--black); border-color: var(--black); }
+    body[data-status="needsAttention"] .route { opacity: .3; }
+    body[data-status="needsAttention"] .route::before,
+    body[data-status="needsAttention"] .route::after { animation: none; opacity: 0; }
+    .stage.active .stage-index { color: var(--pink); background: #192019; }
+    .stage.done .stage-index { color: var(--off-black); }
+    .stage-index { transition: color 300ms ease-out, background-color 300ms ease-out; }
+    @keyframes route-packet {
+      0% { transform: translateX(0); opacity: 0; }
+      20% { opacity: .9; }
+      80% { opacity: .9; }
+      100% { transform: translateX(var(--packet-travel)); opacity: 0; }
+    }
+    body[data-status="ready"] .signal span,
+    body[data-status="vpnReady"] .signal span { animation: none; transform: scaleY(1); }
+    body[data-status="ready"] .signal span:first-child,
+    body[data-status="vpnReady"] .signal span:first-child { transform: scaleY(.45); }
+    body[data-status="ready"] .signal span:nth-child(2),
+    body[data-status="vpnReady"] .signal span:nth-child(2) { transform: scaleY(.7); }
+    body[data-status="needsAttention"] .signal span {
+      animation: none;
+      transform: scaleY(.15);
+      background: var(--off-black);
+    }
+    .action {
+      min-width: 120px;
+      margin: 16px;
+      padding: 12px 16px;
+      border: 1px solid var(--wire);
+      border-radius: 8px;
+      background: var(--blush);
+      color: var(--black);
+      transition: transform 180ms ease-out, background-color 300ms ease-out, border-color 300ms ease-out;
+    }
+    .action:hover { background: #212525; border-color: var(--off-black); transform: translateY(-2px); }
+    .action:active { transform: translateY(0); }
+    button:focus-visible { outline: 2px solid var(--pink); outline-offset: 3px; }
+    .dialog-layer:not([hidden]) { animation: veil-in 180ms ease-out; }
+    .dialog-layer:not([hidden]) .dialog { animation: enter 280ms cubic-bezier(.2,.8,.2,1) both; }
+    @keyframes enter {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes veil-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes signal-search {
+      0%, 100% { transform: scaleY(.25); }
+      50% { transform: scaleY(1); }
+    }
+    @keyframes scan {
+      0% { transform: translateX(-110%); }
+      100% { transform: translateX(420%); }
+    }
+    @keyframes confirmed {
+      from { opacity: .3; transform: translateY(3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (max-height: 700px) {
+      .connection-map { height: 44px; margin-bottom: 12px; }
+      .route { inset-block: 12px; }
+      .route-secondary { inset-block: 4px; }
+      .route-node { top: 16px; }
+      .main { grid-template-rows: auto minmax(240px, 1fr) auto; }
+      .signal { height: 32px; margin-bottom: 12px; }
+      .hero { padding-block: 16px; }
+      .flow { gap: 8px; padding-block: 16px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
+      .signal span { transform: scaleY(.65); }
+      .action:hover { transform: none; }
+    }
+    html[data-hidden="true"] *, html[data-hidden="true"] *::before,
+    html[data-hidden="true"] *::after { animation-play-state: paused !important; }
   </style>
 </head>
 <body>
   <div class="app">
     <header class="header">
-      <div class="header-cell"><span class="live"></span>Prime</div>
+      <div class="header-cell">2.0</div>
       <div class="wordmark">FOG<span>Connection</span></div>
       <div id="clock" class="header-cell">--:--</div>
     </header>
 
     <main class="main">
       <section class="hero">
-        <p id="kicker" class="kicker">Automatic setup</p>
-        <h1 id="title">Подготовка</h1>
+        <div class="connection-map" aria-hidden="true">
+          <i class="route-node"></i>
+          <i class="route"></i><i class="route route-secondary"></i>
+          <div class="signal"><span></span><span></span><span></span></div>
+          <i class="route-node"></i>
+        </div>
+        <p id="kicker" class="kicker">Соединение</p>
+        <h1 id="title" aria-live="polite">Подготовка</h1>
         <p id="message" class="message">Настраиваем соединение автоматически.</p>
       </section>
 
@@ -493,7 +671,7 @@
       <div class="dialog-copy">
         <p class="dialog-label">Compatibility notice</p>
         <h2 id="vpnTitle" class="dialog-title">Обнаружен VPN</h2>
-        <p class="dialog-message">FOG не будет менять настройки VPN и не запустит свой сетевой драйвер поверх него. Доступ проверится автоматически.</p>
+        <p class="dialog-message">FOG не меняет настройки VPN. Проверим доступ через текущее подключение; если его недостаточно, попробуем подключение FOG.</p>
       </div>
       <button id="vpnDismiss" class="dialog-action" type="button">Понятно</button>
     </section>
@@ -536,11 +714,13 @@
       const stage = document.getElementById(stageIds[index]);
       const stateNode = stage.querySelector(".stage-state");
       stage.className = `stage ${state}`.trim();
-      stateNode.textContent = state === "done" ? "OK" : state === "active" ? "RUN" : state === "failed" ? "CHECK" : "WAIT";
+      stateNode.textContent = state === "done" ? "Готово" : state === "active" ? "..." : state === "failed" ? "Сбой" : "";
     }
 
     function renderPrime(payload) {
       currentStatus = payload.status;
+      document.body.dataset.status = payload.status;
+      document.getElementById("kicker").textContent = "Соединение";
       document.getElementById("title").textContent = payload.title;
       document.getElementById("message").textContent = payload.message;
       document.getElementById("progressBar").style.width = `${payload.progress}%`;
@@ -564,22 +744,22 @@
         setStage(0, "done");
         setStage(1, "done");
         setStage(2, "done");
-        document.getElementById("kicker").textContent = payload.status === "vpnReady" ? "VPN protected" : "Connection verified";
+        document.getElementById("kicker").textContent = payload.status === "vpnReady" ? "VPN активен" : "FOG активен";
         document.getElementById("resultValue").textContent = payload.status === "vpnReady" ? "VPN активен, связь готова" : "Соединение готово";
-        actionButton.textContent = "Закрыть";
+        actionButton.textContent = "Выключить";
         actionButton.hidden = false;
       } else if (payload.status === "recovering") {
         setStage(0, "done");
         setStage(1, "active");
         setStage(2, "");
-        document.getElementById("kicker").textContent = "Automatic recovery";
+        document.getElementById("kicker").textContent = "Восстановление";
         document.getElementById("resultValue").textContent = "Переключаем маршрут";
         actionButton.hidden = true;
       } else {
         setStage(0, payload.diagnostics && payload.diagnostics.summary.fail > 0 ? "failed" : "done");
         setStage(1, "done");
         setStage(2, "failed");
-        document.getElementById("kicker").textContent = "Connection check";
+        document.getElementById("kicker").textContent = "Проверка доступа";
         document.getElementById("resultValue").textContent = "Требуется повторная проверка";
         actionButton.textContent = "Повторить";
         actionButton.hidden = false;
@@ -668,6 +848,9 @@
     }
 
     updateClock();
+    document.addEventListener("visibilitychange", () => {
+      document.documentElement.dataset.hidden = String(document.hidden);
+    });
     window.setInterval(updateClock, 30000);
     post("ready");
   </script>

@@ -6,6 +6,11 @@ public static class AgentProtocol
     public const string LegacyPipeName = "fog-prime-agent-v2";
     public const string LegacyPipeNameV1 = "fog-prime-agent-v1";
     public const int Version = 3;
+    public const string SessionPipeEnvironment = "FOG_PRIME_PIPE_NAME";
+
+    public static bool IsSessionPipeName(string? name) =>
+        name is not null && name.StartsWith("fog-prime-session-", StringComparison.Ordinal) &&
+        name.Length == 50 && name.AsSpan(18).ToArray().All(Uri.IsHexDigit);
 }
 
 public sealed record AgentRequest(string Command, string? CorrelationId = null, string? SessionToken = null);

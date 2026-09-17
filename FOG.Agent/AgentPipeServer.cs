@@ -15,6 +15,7 @@ public sealed class AgentPipeServer(
     private const int MaxConnections = 4;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly byte[] _sessionToken = ReadSessionToken();
+    private readonly string _pipeName = ReadPipeName();
     private readonly SemaphoreSlim _connectionSlots = new(MaxConnections, MaxConnections);
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -26,7 +27,7 @@ public sealed class AgentPipeServer(
             {
                 await _connectionSlots.WaitAsync(cancellationToken);
                 pipe = new NamedPipeServerStream(
-                    AgentProtocol.PipeName,
+                    _pipeName,
                     PipeDirection.InOut,
                     MaxConnections,
                     PipeTransmissionMode.Message,
@@ -91,7 +92,7 @@ public sealed class AgentPipeServer(
             ? new AgentResponse(false, "invalid", "Invalid request.", null)
             : await DispatchAsync(request, cancellationToken);
 
-        if (response.Snapshot is not null)
+        if (response.Snapshot is not null && !string.Equals(request?.Command, "status", StringComparison.OrdinalIgnoreCase))
         {
             await stateStore.SaveAsync(response.Snapshot, cancellationToken);
         }
@@ -193,6 +194,15 @@ public sealed class AgentPipeServer(
         {
             throw new InvalidOperationException("FOG Agent requires a valid session token.", ex);
         }
+    }
+
+    private static string ReadPipeName()
+    {
+        var name = Environment.GetEnvironmentVariable(AgentProtocol.SessionPipeEnvironment);
+        Environment.SetEnvironmentVariable(AgentProtocol.SessionPipeEnvironment, null);
+        return AgentProtocol.IsSessionPipeName(name)
+            ? name!
+            : throw new InvalidOperationException("FOG Agent requires a session-specific pipe.");
     }
 
     private async Task<AgentResponse> DispatchAsync(AgentRequest request, CancellationToken cancellationToken)

@@ -26,17 +26,28 @@ New-Item -ItemType Directory -Force -Path $staging, $output | Out-Null
 
 try {
     Copy-Item $runtime (Join-Path $output "runtime") -Recurse -Force
+    $payloadDirectory = Join-Path $root 'FOG.Engine/payloads/flowseal-1.10.2'
+    $payloadManifest = Get-Content (Join-Path $payloadDirectory 'manifest.json') -Raw | ConvertFrom-Json
+    foreach ($entry in $payloadManifest.sha256.PSObject.Properties) {
+        if ($entry.Name -notmatch '^[A-Za-z0-9_]+\.bin$') { throw 'Invalid payload filename.' }
+        $sourcePayload = Join-Path $payloadDirectory $entry.Name
+        if ((Get-FileHash -LiteralPath $sourcePayload -Algorithm SHA256).Hash -ne $entry.Value) {
+            throw "Payload integrity check failed: $($entry.Name)"
+        }
+        Copy-Item -LiteralPath $sourcePayload -Destination (Join-Path $output "runtime/$($entry.Name)") -Force
+    }
+    Copy-Item -LiteralPath (Join-Path $payloadDirectory 'manifest.json') -Destination (Join-Path $output 'payload-provenance.json')
     $trustedManifest = Join-Path $staging "trusted-runtime.manifest.json"
     & (Join-Path $root "FOG.Engine\build\windows\new-runtime-manifest.ps1") -RuntimeDirectory (Join-Path $output "runtime") -OutputPath $trustedManifest -Version $Version -UpstreamCommit $UpstreamCommit
 
-    dotnet publish (Join-Path $root "FOG.Agent\FOG.Agent.csproj") -c Release -r win-x64 --self-contained true "-p:NuGetLockFilePath=obj\publish-win-x64.packages.lock.json" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false "-p:Version=$Version" "-p:FogRuntimeManifestPath=$trustedManifest" "-p:FogProfilesPath=$profiles" -o (Join-Path $staging "agent")
+    dotnet publish (Join-Path $root "FOG.Agent\FOG.Agent.csproj") -c Release -r win-x64 --self-contained true "-p:NuGetLockFilePath=packages.win-x64.lock.json" -p:RestoreLockedMode=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false "-p:Version=$Version" "-p:FogRuntimeManifestPath=$trustedManifest" "-p:FogProfilesPath=$profiles" -o (Join-Path $staging "agent")
     if ($LASTEXITCODE -ne 0) { throw "Agent publish failed." }
 
     $agentPath = Join-Path $staging "agent\FOG.Agent.exe"
     $agentHashPath = Join-Path $staging "trusted-agent.sha256"
     (Get-FileHash -LiteralPath $agentPath -Algorithm SHA256).Hash | Set-Content -LiteralPath $agentHashPath -Encoding ascii -NoNewline
 
-    dotnet publish (Join-Path $root "FOG.WebView2\FOG.WebView2.csproj") -c Release -r win-x64 --self-contained true "-p:NuGetLockFilePath=obj\publish-win-x64.packages.lock.json" -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false "-p:Version=$Version" "-p:FogAgentHashPath=$agentHashPath" -o (Join-Path $staging "ui")
+    dotnet publish (Join-Path $root "FOG.WebView2\FOG.WebView2.csproj") -c Release -r win-x64 --self-contained true "-p:NuGetLockFilePath=packages.win-x64.lock.json" -p:RestoreLockedMode=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false "-p:Version=$Version" "-p:FogAgentHashPath=$agentHashPath" -o (Join-Path $staging "ui")
     if ($LASTEXITCODE -ne 0) { throw "UI publish failed." }
 
     Copy-Item (Join-Path $staging "ui\FOG Prime.exe") (Join-Path $output "FOG Prime.exe") -Force
@@ -45,11 +56,34 @@ try {
     Copy-Item $trustedManifest (Join-Path $output "runtime.manifest.json") -Force
     Copy-Item (Join-Path $root "FOG.Engine\THIRD_PARTY_NOTICES.md") (Join-Path $output "THIRD_PARTY_NOTICES.md") -Force
     Copy-Item (Join-Path $root "FOG.Engine\UPSTREAM.md") (Join-Path $output "UPSTREAM.md") -Force
+    Copy-Item (Join-Path $root "LICENSE") (Join-Path $output "LICENSE") -Force
+    $commit = git -C $root rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot determine source revision.' }
+    $changes = git -C $root status --porcelain
+    $sdk = dotnet --version
+    $fileHashes = [ordered]@{}
+    Get-ChildItem -LiteralPath $output -File -Recurse | Sort-Object FullName | ForEach-Object {
+        $relative = $_.FullName.Substring($output.TrimEnd('\').Length + 1).Replace('\', '/')
+        $fileHashes[$relative] = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+    }
+    [ordered]@{
+        version = $Version
+        sourceCommit = $commit
+        workingTreeModified = [bool]$changes
+        dotnetSdk = $sdk
+        files = $fileHashes
+    } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'build-info.json') -Encoding UTF8
 
     Get-ChildItem $output -Filter '*.xml' -File | Remove-Item -Force
     Get-ChildItem $output -Filter '*.pdb' -File | Remove-Item -Force
     Write-Host "FOG Prime package created: $output"
 }
 finally {
-    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+    $tempRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+    $resolvedStaging = [IO.Path]::GetFullPath($staging)
+    if (-not $resolvedStaging.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        -not ([IO.Path]::GetFileName($resolvedStaging)).StartsWith('fog-prime-package-')) {
+        throw "Unsafe staging cleanup path."
+    }
+    Remove-Item -LiteralPath $resolvedStaging -Recurse -Force -ErrorAction SilentlyContinue
 }
