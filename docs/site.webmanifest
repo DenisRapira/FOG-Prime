@@ -1,0 +1,10 @@
+{
+  "name": "FOG Prime",
+  "short_name": "FOG Prime",
+  "description": "Educational Windows network diagnostics and automatic connection profiles.",
+  "start_url": "/FOG-Prime/",
+  "display": "browser",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "icons": []
+}

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FOG Prime - образовательная сетевая диагностика для Windows</title>
+  <meta name="description" content="FOG Prime демонстрирует сетевую диагностику и автоматические профили соединения в Windows 10/11. Открытый исходный код, .NET 8, WebView2, WinDivert, DNS, TLS и QUIC, без телеметрии.">
+  <meta name="keywords" content="FOG Prime, диагностика сети Windows, образовательное приложение, профили соединения, WinDivert, .NET 8, WebView2, QUIC, TLS, DNS">
+  <meta name="author" content="DenisRapira">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <meta name="theme-color" content="#000000">
+  <link rel="canonical" href="https://denisrapira.github.io/FOG-Prime/ru/">
+  <link rel="alternate" hreflang="en" href="https://denisrapira.github.io/FOG-Prime/">
+  <link rel="alternate" hreflang="ru" href="https://denisrapira.github.io/FOG-Prime/ru/">
+  <link rel="alternate" hreflang="x-default" href="https://denisrapira.github.io/FOG-Prime/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="FOG Prime">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:title" content="FOG Prime - диагностика соединения для Windows">
+  <meta property="og:description" content="Образовательная сетевая диагностика Windows 10/11 с доверенным локальным Agent и без телеметрии.">
+  <meta property="og:url" content="https://denisrapira.github.io/FOG-Prime/ru/">
+  <meta property="og:image" content="https://denisrapira.github.io/FOG-Prime/assets/fog-prime-social-preview.png">
+  <meta property="og:image:alt" content="Интерфейс FOG Prime для диагностики соединения Windows">
+  <meta name="twitter:card" content="summary_large_image">
+  <style>
+    :root { --ink:#0a0a0a; --paper:#fff; --muted:#666; --line:#dedede; --pink:#f50db4; --green:#087c45; }
+    * { box-sizing:border-box; } html { scroll-behavior:smooth; } body { margin:0; background:var(--paper); color:var(--ink); font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; letter-spacing:0; } a { color:inherit; }
+    .nav { position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between; min-height:64px; padding:0 max(24px,calc((100vw - 1120px)/2)); background:rgba(255,255,255,.94); border-bottom:1px solid var(--line); backdrop-filter:blur(14px); }
+    .brand { font:800 17px/1 ui-monospace,"Cascadia Mono",monospace; text-decoration:none; } .brand span { color:var(--pink); } .nav-links { display:flex; align-items:center; gap:22px; font-size:14px; font-weight:650; } .nav-links a { text-decoration:none; } .nav-links a:hover { color:var(--pink); }
+    .download { display:inline-flex; align-items:center; min-height:42px; padding:0 18px; background:var(--ink); color:#fff; text-decoration:none; font-weight:750; transition:background .2s ease; } .download:hover { background:var(--pink); }
+    .hero { position:relative; isolation:isolate; display:grid; align-items:end; min-height:min(720px,calc(100svh - 64px)); padding:72px max(24px,calc((100vw - 1120px)/2)); overflow:hidden; background:#202020 url("../assets/fog-prime-app.png") center/cover no-repeat; color:#fff; } .hero::before { content:""; position:absolute; inset:0; z-index:-1; background:rgba(0,0,0,.64); }
+    .hero-content { max-width:800px; } .eyebrow { margin:0 0 18px; color:#ff76d8; font:750 13px/1.2 ui-monospace,"Cascadia Mono",monospace; text-transform:uppercase; } h1 { max-width:760px; margin:0; font-size:clamp(42px,7vw,78px); line-height:.98; letter-spacing:0; } .lead { max-width:700px; margin:24px 0 28px; font-size:20px; line-height:1.55; color:#f1f1f1; } .actions { display:flex; flex-wrap:wrap; gap:12px; } .secondary { display:inline-flex; align-items:center; min-height:42px; padding:0 18px; border:1px solid rgba(255,255,255,.75); color:#fff; text-decoration:none; font-weight:700; } .secondary:hover { border-color:var(--pink); color:#ff76d8; }
+    .band { border-bottom:1px solid var(--line); } .inner { width:min(1120px,calc(100% - 48px)); margin:auto; padding:80px 0; } .status { display:flex; align-items:center; gap:10px; margin-bottom:18px; color:var(--green); font:700 13px/1.2 ui-monospace,"Cascadia Mono",monospace; text-transform:uppercase; } .status::before { content:""; width:9px; height:9px; background:var(--green); box-shadow:0 0 16px rgba(8,124,69,.45); } h2 { margin:0 0 20px; font-size:34px; line-height:1.15; letter-spacing:0; } .intro { max-width:760px; margin:0; color:var(--muted); font-size:18px; line-height:1.7; }
+    .feature-grid { display:grid; grid-template-columns:repeat(3,1fr); margin-top:48px; border-top:1px solid var(--line); border-left:1px solid var(--line); } .feature { min-height:210px; padding:26px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); } .feature b { display:block; margin-bottom:12px; font-size:18px; } .feature p { margin:0; color:var(--muted); line-height:1.6; }
+    .steps { display:grid; grid-template-columns:repeat(3,1fr); margin-top:40px; counter-reset:step; } .step { padding:26px 28px 26px 0; border-top:1px solid var(--ink); counter-increment:step; } .step::before { content:"0" counter(step); display:block; margin-bottom:24px; color:var(--pink); font:800 13px/1 ui-monospace,"Cascadia Mono",monospace; } .step strong { font-size:18px; } .step p { color:var(--muted); line-height:1.55; }
+    .requirements { width:100%; border-collapse:collapse; margin-top:34px; } .requirements th,.requirements td { padding:16px 0; border-bottom:1px solid var(--line); text-align:left; } .requirements th { width:34%; color:var(--muted); font-size:14px; } .final { padding:84px 24px; background:var(--ink); color:#fff; text-align:center; } .final p { max-width:620px; margin:0 auto 26px; color:#cfcfcf; font-size:18px; line-height:1.6; } footer { display:flex; justify-content:space-between; gap:24px; width:min(1120px,calc(100% - 48px)); margin:auto; padding:28px 0; color:var(--muted); font-size:13px; } footer a:hover { color:var(--pink); }
+    @media (max-width:760px) { .nav-links a:not(.download) { display:none; } .hero { min-height:620px; padding-bottom:48px; } h1 { font-size:44px; } .lead { font-size:17px; } .inner { width:min(100% - 32px,1120px); padding:58px 0; } .feature-grid,.steps { grid-template-columns:1fr; } .feature { min-height:auto; } .step { padding-right:0; } .requirements th,.requirements td { display:block; width:100%; } .requirements th { padding-bottom:2px; border:0; } .requirements td { padding-top:2px; } footer { width:calc(100% - 32px); flex-direction:column; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } * { transition:none!important; } }
+  </style>
+</head>
+<body>
+  <nav class="nav" aria-label="Основная навигация"><a class="brand" href="#top">FOG <span>PRIME</span></a><div class="nav-links"><a href="#features">Возможности</a><a href="#requirements">Требования</a><a href="../" lang="en">English</a><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/latest">Скачать</a></div></nav>
+  <main id="top">
+    <section class="hero"><div class="hero-content"><p class="eyebrow">Открытый исходный код / Windows 10 и 11</p><h1>FOG Prime</h1><p class="lead">Образовательная диагностика соединения с проверенными сетевыми профилями, работающая полностью на вашем компьютере.</p><div class="actions"><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/latest">Скачать для Windows x64</a><a class="secondary" href="https://github.com/DenisRapira/FOG-Prime">Исходный код на GitHub</a></div></div></section>
+    <section id="features" class="band"><div class="inner"><div class="status">Локальная служба готова</div><h2>Один понятный сценарий</h2><p class="intro">FOG Prime проверяет систему, выбирает ограниченный проверенный профиль соединения и подтверждает доступ. Не нужны аккаунт, подписка, удалённый прокси или телеметрия.</p><div class="feature-grid"><div class="feature"><b>Диагностика соединения</b><p>Проверка DNS, настроенных конечных точек, CDN-маршрутов, транспортов реального времени, TLS и QUIC.</p></div><div class="feature"><b>Доверенная локальная среда</b><p>Аутентификация команд UI → Agent и проверка SHA-256 каждого runtime-файла.</p></div><div class="feature"><b>Автовосстановление</b><p>Контроль Engine, повторное использование здоровой сессии и восстановление после сбоя.</p></div></div></div></section>
+    <section class="band"><div class="inner"><h2>Три этапа без ручной настройки</h2><div class="steps"><div class="step"><strong>Проверка системы</strong><p>Контроль служб Windows, целостности runtime и базовой готовности сети.</p></div><div class="step"><strong>Настройка соединения</strong><p>Выбор одного из встроенных профилей и запуск нативного Engine.</p></div><div class="step"><strong>Проверка доступа</strong><p>Стабильные health-checks и итоговый статус настроенных конечных точек.</p></div></div></div></section>
+    <section id="requirements" class="band"><div class="inner"><h2>Системные требования</h2><table class="requirements"><tr><th>Операционная система</th><td>Windows 10 или Windows 11 x64</td></tr><tr><th>Интерфейс</th><td>Microsoft Edge WebView2 Runtime</td></tr><tr><th>Права</th><td>Доступ администратора для сетевого драйвера WinDivert</td></tr><tr><th>Компонент Windows</th><td>Работающая служба Base Filtering Engine</td></tr><tr><th>Приватность</th><td>Нет обязательного удалённого backend и встроенной телеметрии</td></tr></table></div></section>
+    <section class="final"><h2>Скачайте официальную сборку</h2><p>Используйте только страницу Releases этого репозитория. Исходный код, сборка, проверки целостности и политика безопасности открыты.</p><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/latest">Открыть последний релиз</a></section>
+  </main>
+  <footer><span>FOG Prime / MIT License</span><span><a href="https://github.com/DenisRapira/FOG-Prime/blob/main/SECURITY.md">Безопасность</a> · <a href="https://github.com/DenisRapira/FOG-Prime/blob/main/docs/PRIVACY.md">Приватность</a> · <a href="https://github.com/DenisRapira/FOG-Prime/issues">Поддержка</a></span></footer>
+</body>
+</html>
