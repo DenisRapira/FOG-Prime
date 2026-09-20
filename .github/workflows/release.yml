@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 8.0.x
-      - uses: cygwin/cygwin-install-action@121fc294c6b6864e1d52caeaa5c8ddb33d3e90f3 # v6
+      - uses: cygwin/cygwin-install-action@3f0a3f9f988f7e96b8c18098ae05eaec175f5b52 # v6
         with:
           platform: x86_64
           site: https://mirrors.kernel.org/sourceware/cygwin/
