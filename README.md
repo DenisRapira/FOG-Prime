@@ -24,9 +24,15 @@
 
 ## Download
 
-### FOG Prime 2.0.0
+### FOG Prime 2.0.1
 
 Новая версия для автоматической настройки доступа к **Discord и YouTube**:
+
+В v2.0.1 расширены существующие списки адресов: `robrun.com`, `kefirgames.com`,
+`robrun.wiki`, `robrun.site`, `robrun.org`, `epicgames.com`, `epicgames.dev`,
+`easyanticheat.net`. Движок, сетевые стратегии и интерфейс сохранены из v2.0.0.
+Экспериментальный FOG Native в этот релиз не входит. Добавление доменов не
+гарантирует работу авторизации, голоса или игровых чатов.
 
 - автоматический перебор с возвратом к лучшему найденному профилю;
 - отдельный учёт ошибок голосового соединения Discord;
@@ -35,9 +41,9 @@
 - обновлённый интерфейс с анимацией соединения и восстановлением WebView2;
 - предупреждение о VPN без его принудительного отключения.
 
-**[Скачать v2.0.0](https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.0)** ·
-[Что изменилось](docs/RELEASE-2.0.0.md) ·
-[Предыдущая v0.1.9](https://github.com/DenisRapira/FOG-Prime/releases/tag/v0.1.9)
+**[Скачать v2.0.1](https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.1)** ·
+[Что изменилось](docs/RELEASE-2.0.1.md) ·
+[Предыдущая v2.0.0](https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.0)
 
 Результат зависит от сети. Проверки доступности не гарантируют слышимость голоса,
 воспроизведение видео или совместимость с каждым античитом. Telegram и Steam
