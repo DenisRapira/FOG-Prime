@@ -57,6 +57,10 @@ try {
     Copy-Item (Join-Path $root "FOG.Engine\THIRD_PARTY_NOTICES.md") (Join-Path $output "THIRD_PARTY_NOTICES.md") -Force
     Copy-Item (Join-Path $root "FOG.Engine\UPSTREAM.md") (Join-Path $output "UPSTREAM.md") -Force
     Copy-Item (Join-Path $root "LICENSE") (Join-Path $output "LICENSE") -Force
+    $notices = Join-Path $output 'notices'
+    New-Item -ItemType Directory -Path $notices -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $root 'FOG.Engine/licenses/WinDivert-LICENSE.txt') -Destination $notices
+    Copy-Item -LiteralPath (Join-Path $root 'FOG.Engine/upstream/docs/LICENSE.txt') -Destination (Join-Path $notices 'Engine-MIT-LICENSE.txt')
     $commit = git -C $root rev-parse HEAD
     if ($LASTEXITCODE -ne 0) { throw 'Cannot determine source revision.' }
     $changes = git -C $root status --porcelain

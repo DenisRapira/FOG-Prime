@@ -9,7 +9,8 @@ Address-list update on the existing 2.0.0 engine and UI.
 - Uses the existing third-party signed driver. The experimental unsigned
   FOG Native driver and independent engine are NOT included.
 - Updated the displayed version and download documentation to 2.0.1.
-- Third-party copyright, license and provenance notices are retained.
+- Third-party copyright and provenance notices are retained; the archive also
+  includes the original WinDivert license text and upstream engine MIT license.
 
 ## Checks
 
