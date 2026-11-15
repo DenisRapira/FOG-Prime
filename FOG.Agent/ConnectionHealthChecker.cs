@@ -192,6 +192,7 @@ public sealed class ConnectionHealthChecker : IDisposable
 
     private static async Task<ProbeAttempt> CheckDnsAttemptAsync(int attempt, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var host = attempt % 2 == 0 ? "discord.com" : "youtube.com";
         var watch = Stopwatch.StartNew();
         try
@@ -201,6 +202,7 @@ public sealed class ConnectionHealthChecker : IDisposable
             var addresses = await Dns.GetHostAddressesAsync(host, deadline.Token);
             return new ProbeAttempt(addresses.Length > 0, (int)watch.ElapsedMilliseconds, $"{host}: {addresses.Length} addresses");
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             return new ProbeAttempt(false, (int)watch.ElapsedMilliseconds, $"{host}: {ex.GetType().Name}");

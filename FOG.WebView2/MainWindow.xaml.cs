@@ -21,6 +21,7 @@ public partial class MainWindow : Window
 
     private readonly AgentClient _agentClient = new();
     private readonly UpdateChecker _updateChecker = new();
+    private readonly ConnectionPresentation _presentation = new();
     private readonly SemaphoreSlim _primeGate = new(1, 1);
     private readonly CancellationTokenSource _monitorCancellation = new();
     private bool _primeStarted;
@@ -221,7 +222,7 @@ public partial class MainWindow : Window
                     _ = CheckForUpdatesAsync(_monitorCancellation.Token);
                     break;
                 case "runPrime":
-                    await RunPrimeAsync(autoStart: true);
+                    await RunPrimeAsync(autoStart: true, restart: true);
                     break;
                 case "close":
                     Close();
@@ -234,7 +235,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             DiagnosticLog.Write("UI", "Interface command failed", ex);
-            await PostAsync("prime", new PrimePayload("needsAttention", "Нужна помощь", "FOG Prime не смог завершить проверку.", 100, null, Array.Empty<CheckItem>()));
+            await PostAsync("prime", new PrimePayload("needsAttention", "Не удалось подключиться", "Попробуйте ещё раз.", 0, null, Array.Empty<CheckItem>()));
         }
     }
 
@@ -267,7 +268,7 @@ public partial class MainWindow : Window
         e.State = CoreWebView2PermissionState.Deny;
     }
 
-    private async Task RunPrimeAsync(bool autoStart)
+    private async Task RunPrimeAsync(bool autoStart, bool restart = false)
     {
         if (!await _primeGate.WaitAsync(0))
         {
@@ -277,26 +278,31 @@ public partial class MainWindow : Window
         try
         {
             _autoStartRequested |= autoStart;
-            await PostAsync("prime", new PrimePayload("checking", "Проверяем систему", "Это займет несколько секунд.", 16, null, Array.Empty<CheckItem>()));
+            _presentation.Reset();
+            _presentation.Present(null);
+            await PostAsync("prime", new PrimePayload("checking", "Подключаемся", "Это займёт немного времени.", 0, null, Array.Empty<CheckItem>()));
             var diagnostics = BuildDiagnostics();
 
             if (diagnostics.Summary.Fail > 0)
             {
-                await PostAsync("prime", new PrimePayload("needsAttention", "Нужна помощь", "Не удалось подготовить компоненты FOG Prime.", 100, diagnostics, Array.Empty<CheckItem>()));
+                await PostAsync("prime", new PrimePayload("needsAttention", "Не удалось запустить FOG", "Запустите приложение из полной папки FOG Prime.", 0, null, Array.Empty<CheckItem>()));
                 return;
             }
 
-            await PostAsync("prime", new PrimePayload("starting", "Настраиваем соединение", "Подбираем рабочий режим автоматически.", 42, diagnostics, Array.Empty<CheckItem>()));
+            await PostAsync("prime", new PrimePayload("starting", "Подключаемся", "Это займёт немного времени.", 0, null, Array.Empty<CheckItem>()));
+            StartMonitor();
 
             AgentResponse response;
             try
             {
+                if (restart)
+                    await _agentClient.SendAsync("stop", _monitorCancellation.Token);
                 response = await _agentClient.SendAsync(autoStart ? "start" : "recheck", _monitorCancellation.Token);
             }
             catch (Exception ex) when (!_monitorCancellation.IsCancellationRequested)
             {
                 DiagnosticLog.Write("UI", "Initial Agent command failed", ex);
-                await PostAsync("prime", new PrimePayload("recovering", "Восстанавливаем связь", "FOG запустит резервный вариант автоматически.", 68, diagnostics, Array.Empty<CheckItem>()));
+                await RenderSnapshotAsync(null, null);
                 StartMonitor();
                 return;
             }
@@ -329,7 +335,7 @@ public partial class MainWindow : Window
             {
                 await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
                 var response = await _agentClient.SendAsync("status", cancellationToken);
-                if (_autoStartRequested && response.Snapshot?.State == "stopped")
+                if (_autoStartRequested && _primeGate.CurrentCount != 0 && response.Snapshot?.State == "stopped")
                 {
                     DiagnosticLog.Write("UI", "Agent is stopped while automatic mode is requested; sending start again");
                     response = await _agentClient.SendAsync("start", cancellationToken);
@@ -343,66 +349,18 @@ public partial class MainWindow : Window
             catch (Exception ex)
             {
                 DiagnosticLog.Write("UI", "Agent status request failed", ex);
-                await PostAsync("prime", new PrimePayload("recovering", "Восстанавливаем связь", "FOG уже пробует резервный вариант.", 68, null, Array.Empty<CheckItem>()));
+                await RenderSnapshotAsync(null, null);
             }
         }
     }
 
     private async Task RenderSnapshotAsync(AgentSnapshot? snapshot, DiagnosticsPayload? diagnostics)
     {
-        var checks = snapshot?.Probes.Select(probe => new CheckItem(probe.Name, probe.Ok ? "ok" : "fail", probe.Detail)).ToArray()
-            ?? Array.Empty<CheckItem>();
-        var ready = snapshot is { ConnectionHealthy: true };
-        var engineActive = snapshot is { EngineRunning: true };
         var tunnelActive = !string.IsNullOrWhiteSpace(snapshot?.ActiveTunnel);
-
-        await PostAsync("vpn", new VpnPayload(tunnelActive, ready));
-
-        if (ready)
-        {
-            await PostAsync("prime", new PrimePayload(
-                tunnelActive ? "vpnReady" : "ready",
-                tunnelActive ? "Доступ через VPN" : "FOG подключён",
-                tunnelActive
-                    ? "FOG не меняет VPN и проверяет доступ автоматически."
-                    : "Discord и YouTube отвечают. Голосовой канал проверяется в Discord.",
-                100,
-                diagnostics,
-                checks));
-            return;
-        }
-
-        if (snapshot?.State == "degraded")
-        {
-            var failed = snapshot.Probes.Where(probe => !probe.Ok)
-                .Select(probe => probe.Name switch
-                {
-                    "gateway" or "discord.com" or "discord-client" => "Discord",
-                    "discord-voice" => "голос Discord",
-                    "cdn.discordapp.com" => "файлы Discord",
-                    "www.youtube.com" => "YouTube",
-                    "dns" => "DNS",
-                    _ => "сеть"
-                }).Distinct();
-            await PostAsync("prime", new PrimePayload("needsAttention", "Доступ ограничен",
-                $"Не удалось подтвердить доступ: {string.Join(", ", failed)}. FOG повторит проверку автоматически.",
-                72, diagnostics, checks));
-            return;
-        }
-
-        await PostAsync("prime", new PrimePayload(
-            snapshot?.State == "degraded" ? "needsAttention" : engineActive ? "checking" : "recovering",
-            tunnelActive ? "Проверяем соединение" : "Подключаем",
-            tunnelActive
-                ? "Проверяем доступ через активное подключение."
-                : engineActive
-                ? "Проверяем доступ. Обычно это занимает несколько секунд."
-                : snapshot?.State == "recovering"
-                ? "Подбираем рабочее подключение."
-                : "Почти готово.",
-            72,
-            diagnostics,
-            checks));
+        var view = _presentation.Present(snapshot);
+        await PostAsync("vpn", new VpnPayload(tunnelActive, snapshot?.ConnectionHealthy == true));
+        await PostAsync("prime", new PrimePayload(view.Status, view.Title, view.Message,
+            view.Progress, null, Array.Empty<CheckItem>()));
     }
 
     private async Task CheckForUpdatesAsync(CancellationToken cancellationToken)

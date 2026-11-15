@@ -2,7 +2,34 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
-## [Unreleased]
+## [2.0.2] - 2026-11-15
+
+- Simplify the automatic connection interface to a single status and one action;
+  hide engineering diagnostics and profile-search details from the normal view.
+- Keep transient failures in a bounded recovery state, offer retry after a
+  persistent failure, and never infer readiness from VPN presence alone.
+- Make explicit retry restart FOG's connection cycle, without restarting games
+  or changing external VPN settings. Preserve VPN and update notices.
+
+- Keep the established working runtime and its original signed driver. The
+  final local distribution uses unsigned FOG EXEs, as in 2.0.1; the experimental
+  native driver and TEST ONLY signatures are excluded.
+- Verify the runtime driver's Windows signature and preserve its exact bytes
+  during packaging; record its identity and hash in build-info.json.
+
+- Add optional Authenticode signing for the three FOG executables, before their
+  dependent integrity hashes are embedded. Untrusted development signatures
+  require an explicit flag and are identified in build-info.json.
+- Keep a qualified, live Engine and its remembered profile during persistent
+  service-probe failures. Automatic process-exit recovery and bounded initial
+  profile qualification remain separate and unchanged.
+- Do not reuse Engine-assisted probe results as direct VPN readiness after the
+  Engine exits, including an exit while a health check is running.
+- Propagate caller cancellation from DNS checks and stop before applying
+  canceled Engine health results.
+
+These changes address FOG supervision defects, not a verified ROB RUN backend
+session or game-proxy selection fix. No game session is restarted or redirected.
 
 ## [2.0.0] - 2026-09-18
 

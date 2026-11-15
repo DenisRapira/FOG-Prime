@@ -20,11 +20,9 @@ public sealed class EngineSupervisor(
     ILogger<EngineSupervisor> logger)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly SessionRecoveryPolicy _sessionRecovery = new();
     private readonly HealthRefreshSignal _healthRefresh = new();
     private readonly ProfileSearch _profileSearch = new();
     private DateTimeOffset _qualificationStartedAt;
-    private DateTimeOffset _nextProfileSearchAt;
     private EngineInstance? _engine;
     private EngineProfile? _activeProfile;
     private IReadOnlyList<ProbeResult> _lastProbes = Array.Empty<ProbeResult>();
@@ -210,7 +208,8 @@ public sealed class EngineSupervisor(
                     return await RefreshHealthInternalAsync(cancellationToken);
                 }
 
-                if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
+                // Only an established direct session owns reusable tunnel-only probes.
+                if (_directMode && TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
                 {
                     _directMode = true;
                     _waitingForTunnel = false;
@@ -278,13 +277,14 @@ public sealed class EngineSupervisor(
             LogTunnelInfo(tunnel, nameof(RecoverIfNeededAsync));
             if (tunnel is not null)
             {
-                _lastProbes = IsRunning
+                var engineWasRunning = IsRunning;
+                _lastProbes = engineWasRunning
                     ? _startupQualificationPending
                         ? await healthChecker.CheckStartupAsync(cancellationToken, confirm: _startupQualificationFailures > 0)
                         : await healthChecker.CheckAsync(cancellationToken)
                     : await healthChecker.CheckDirectAsync(cancellationToken);
                 LogProbeResults(_lastProbes, nameof(RecoverIfNeededAsync));
-                if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
+                if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, engineWasRunning || IsRunning))
                 {
                     _directMode = true;
                     _waitingForTunnel = false;
@@ -372,10 +372,15 @@ public sealed class EngineSupervisor(
         string stableSessionMessage,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsRunning)
+        {
+            _lastProbes = Array.Empty<ProbeResult>();
+            return CreateSnapshot(_desiredRunning ? "recovering" : "stopped");
+        }
         _lastProbes = _profileSearch.IncludeVoiceRequirement(_lastProbes);
         if (_lastProbes.Count > 0 && _lastProbes.All(probe => probe.Ok))
         {
-            _sessionRecovery.Observe(true, DateTimeOffset.UtcNow);
             driverBackoff.Reset();
             if (_activeProfile is { } activeProfile)
             {
@@ -389,7 +394,6 @@ public sealed class EngineSupervisor(
 
         if (ProfileSearch.PreserveConnectedClient(_lastProbes))
         {
-            _sessionRecovery.Observe(true, DateTimeOffset.UtcNow);
             CompleteStartupQualification();
             _profileSearch.Reset();
             logger.LogInformation("Desktop Discord and YouTube are connected; preserving profile despite ancillary HTTP failure");
@@ -442,27 +446,14 @@ public sealed class EngineSupervisor(
                 StartProfile(catalog.All.Single(p => p.Id.Equals(best, StringComparison.OrdinalIgnoreCase)));
                 _lastProbes = Array.Empty<ProbeResult>();
             }
-            logger.LogWarning("Profile search exhausted; retaining best available profile and delaying the next search");
-            _nextProfileSearchAt = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(5);
+            logger.LogWarning("Profile search exhausted; retaining best available profile");
             CompleteStartupQualification();
             UpdateCompatibility();
             return CreateSnapshot("degraded");
         }
 
-        if (_desiredRunning && DateTimeOffset.UtcNow >= _nextProfileSearchAt && _activeProfile is { } failedProfile &&
-            _sessionRecovery.Observe(false, DateTimeOffset.UtcNow))
-        {
-            ForgetPreferredProfile(failedProfile.Id);
-            profileRotation.MovePast(failedProfile.Id, catalog.All);
-            logger.LogWarning("Persistent connectivity failure; starting bounded recovery from profile {ProfileId}", failedProfile.Id);
-            await StopInternalAsync(cancellationToken);
-            var failedProbes = _lastProbes;
-            ResetStartupCycle();
-            _profileSearch.IncludeVoiceRequirement(failedProbes);
-            _profileSearch.Record(failedProfile.Id, failedProbes);
-            _startupAttemptedProfiles.Add(failedProfile.Id);
-            return await StartBestInternalAsync(cancellationToken);
-        }
+        // Service probes cannot prove that an established game or voice session is broken.
+        // Process-exit recovery is handled separately by the supervisor loops.
         logger.LogInformation(stableSessionMessage);
         return CreateSnapshot("degraded");
     }
@@ -495,7 +486,6 @@ public sealed class EngineSupervisor(
     {
         CompleteStartupQualification();
         _profileSearch.Reset();
-        _nextProfileSearchAt = default;
         _lastProbes = Array.Empty<ProbeResult>();
     }
 
@@ -590,7 +580,7 @@ public sealed class EngineSupervisor(
     private async Task<AgentSnapshot?> DeferToActiveTunnelAsync(CancellationToken cancellationToken)
     {
         var tunnel = tunnelDetector.FindActiveTunnel();
-        if (tunnel is null || !TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
+        if (!_directMode || tunnel is null || !TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
         {
             if (tunnel is not null)
             {

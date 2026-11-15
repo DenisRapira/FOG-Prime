@@ -56,3 +56,27 @@ The security test modifies temporary package copies only. The reliability and UI
 ## Create a GitHub release
 
 Push a signed or annotated tag such as `v0.1.0`. The `Release` workflow builds the Engine and application from source, verifies the package, uploads a CI artifact, and creates a GitHub Release ZIP.
+
+## Optional Application Signing
+
+Application signing requires PowerShell 7.4 or newer (.NET 8 or newer), plus
+Windows SDK SignTool. Unsigned packaging retains its existing requirements.
+
+`build/package.ps1` accepts `-CertificateThumbprint` and `-SignToolPath` for
+a code-signing certificate in `Cert:\CurrentUser\My`. No PFX password or private
+key is written into the package. For a production certificate, also supply an
+HTTPS RFC 3161 `-TimestampServer`; Windows trust verification must succeed.
+
+For a self-signed test certificate, explicitly add `-AllowDevelopmentSignature`.
+That flag does not establish Windows trust or kernel-driver signing eligibility.
+It records the actual signature trust status in `build-info.json`. Do not import
+a development certificate into a user's trusted roots to disguise this limit.
+
+Signing occurs before dependent integrity hashes. Do not sign packaged EXEs
+after packaging: doing so can invalidate the runtime manifest or embedded Agent
+hash. The driver and third-party DLL signatures are left unchanged.
+
+The hosted GitHub runner does not have the local signing key. Pushing a tag
+does not automatically make its CI-built files signed; the current workflow
+packages without a signing certificate. Do not replace tested, locally signed
+assets with that unsigned CI artifact or put a private key into the repository.

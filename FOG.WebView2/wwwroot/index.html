@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
-  <title>FOG Prime 2.0</title>
+  <title>FOG Prime 2.0.2</title>
   <style>
     :root {
       color-scheme: dark;
@@ -42,10 +42,9 @@
 
     .app {
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr) auto;
+      grid-template-rows: auto 1fr auto;
       width: 100%;
-      height: 100vh;
-      min-height: 600px;
+      min-height: max(600px, 100dvh);
       border: 1px solid var(--wire);
     }
 
@@ -90,33 +89,18 @@
       color: var(--pink);
     }
 
-    .live {
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      margin-right: 8px;
-      background: var(--pink);
-    }
-
     .main {
       display: grid;
-      grid-template-rows: auto minmax(260px, 1fr) auto;
-      min-height: 0;
+      place-items: center;
+      min-width: 0;
+      padding: 24px 20px;
     }
 
     .hero {
-      padding: 38px 32px 28px;
+      width: 100%;
+      max-width: 480px;
+      padding: 32px 12px;
       text-align: center;
-      border-bottom: 1px solid var(--wire);
-    }
-
-    .kicker {
-      margin: 0 0 10px;
-      color: var(--pink);
-      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
     }
 
     h1 {
@@ -137,160 +121,6 @@
       line-height: 1.5;
     }
 
-    .flow {
-      position: relative;
-      display: grid;
-      align-content: center;
-      gap: 12px;
-      padding: 24px 32px;
-      background: var(--white);
-      border-bottom: 1px solid var(--wire);
-    }
-
-    .flow::before {
-      content: "";
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 0;
-      height: 240px;
-      background: var(--wire);
-      transform: translate(-50%, -50%);
-    }
-
-    .stage {
-      position: relative;
-      z-index: 1;
-      display: grid;
-      grid-template-columns: 40px minmax(0, 1fr) 64px;
-      align-items: center;
-      min-height: 72px;
-      border: 0;
-      border-bottom: 1px solid var(--wire);
-      background: var(--white);
-      transition: border-color 220ms ease-out, background-color 220ms ease-out, color 220ms ease-out;
-    }
-
-    .stage-index {
-      display: grid;
-      place-items: center;
-      align-self: stretch;
-      border-right: 1px solid var(--wire);
-      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    .stage-copy {
-      min-width: 0;
-      padding: 12px 16px;
-    }
-
-    .stage-title {
-      font-size: 16px;
-      font-weight: 600;
-    }
-
-    .stage-note {
-      margin-top: 3px;
-      color: #777777;
-      font-size: 12px;
-      line-height: 1.33;
-    }
-
-    .stage-state {
-      display: grid;
-      place-items: center;
-      align-self: stretch;
-      border-left: 1px solid var(--wire);
-      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    .stage.active {
-      border-color: var(--pink);
-      background: var(--blush);
-    }
-
-    .stage.active .stage-index,
-    .stage.active .stage-state {
-      border-color: var(--pink);
-      color: var(--pink);
-    }
-
-    .stage.done {
-      border-color: var(--black);
-    }
-
-    .stage.done .stage-index {
-      border-color: var(--wire);
-      background: transparent;
-      color: var(--black);
-    }
-
-    .stage.done .stage-state {
-      border-color: var(--wire);
-      background: transparent;
-      color: var(--black);
-    }
-
-    .stage.failed {
-      border-color: var(--pink);
-    }
-
-    .stage.failed .stage-state {
-      border-color: var(--pink);
-      color: var(--pink);
-    }
-
-    .result {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      min-height: 88px;
-      border-bottom: 1px solid var(--wire);
-    }
-
-    .result-copy {
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding: 18px 24px;
-    }
-
-    .result-label {
-      color: #777777;
-      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-
-    .result-value {
-      margin-top: 4px;
-      font-size: 16px;
-      font-weight: 600;
-    }
-
-    .action {
-      min-width: 150px;
-      border: 0;
-      border-left: 1px solid var(--wire);
-      border-radius: 0;
-      background: var(--black);
-      color: var(--white);
-      cursor: pointer;
-      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      transition: color 220ms ease-out, background-color 220ms ease-out, border-color 220ms ease-out;
-    }
-
-    .action:hover {
-      background: var(--off-black);
-    }
-
     .action[hidden] {
       display: none;
     }
@@ -301,23 +131,11 @@
       justify-content: space-between;
       min-height: 48px;
       padding: 0 20px;
-      color: #777777;
+      border-top: 1px solid var(--wire);
+      color: var(--off-black);
       font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
       font-size: 11px;
       text-transform: uppercase;
-    }
-
-    .progress-track {
-      width: 112px;
-      height: 4px;
-      background: var(--wire);
-    }
-
-    .progress-bar {
-      width: 0;
-      height: 100%;
-      background: var(--pink);
-      transition: width 300ms ease-out;
     }
 
     .dialog-layer {
@@ -340,20 +158,13 @@
       border: 1px solid var(--black);
       border-radius: 8px;
       background: var(--white);
-      overflow: hidden;
+      max-height: calc(100dvh - 48px);
+      overflow: auto;
+      overscroll-behavior: contain;
     }
 
     .dialog-copy {
       padding: 28px;
-    }
-
-    .dialog-label {
-      margin: 0 0 10px;
-      color: var(--pink);
-      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
     }
 
     .dialog-title {
@@ -415,45 +226,10 @@
       background: var(--wire);
     }
 
-    @media (max-height: 820px) {
-      .hero {
-        padding-block: 26px 20px;
-      }
-
-      .flow {
-        gap: 22px;
-        padding-block: 24px;
-      }
-
-      .stage {
-        min-height: 64px;
-      }
-    }
-    .header, .hero, .flow, .result, .footer {
-      animation: enter 500ms cubic-bezier(.2,.8,.2,1) both;
-    }
-    .hero { animation-delay: 60ms; }
-    .flow { animation-delay: 120ms; }
-    .result, .footer { animation-delay: 180ms; }
+    .hero { animation: enter 500ms cubic-bezier(.2,.8,.2,1) both; }
     h1, .dialog-title { font-family: "Segoe UI", sans-serif; }
     .wordmark { font-family: "Segoe UI", sans-serif; font-size: 22px; font-weight: 600; }
-    .wordmark span { font-size: 10px; color: var(--off-black); }
-    .stage-note, .result-label, .footer { color: var(--off-black); }
-    .stage { position: relative; overflow: hidden; }
-    .stage::after {
-      content: "";
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      height: 2px;
-      width: 32%;
-      background: var(--pink);
-      opacity: 0;
-      pointer-events: none;
-    }
-    .stage.active::after { opacity: .8; animation: scan 2.2s ease-in-out infinite; }
-    .stage.done { border-color: var(--wire); }
-    .stage.done .stage-state { animation: confirmed 420ms ease-out; }
+    .wordmark span { font-size: 11px; color: var(--off-black); }
     .signal {
       display: flex;
       align-items: center;
@@ -527,9 +303,6 @@
     body[data-status="needsAttention"] .route { opacity: .3; }
     body[data-status="needsAttention"] .route::before,
     body[data-status="needsAttention"] .route::after { animation: none; opacity: 0; }
-    .stage.active .stage-index { color: var(--pink); background: #192019; }
-    .stage.done .stage-index { color: var(--off-black); }
-    .stage-index { transition: color 300ms ease-out, background-color 300ms ease-out; }
     @keyframes route-packet {
       0% { transform: translateX(0); opacity: 0; }
       20% { opacity: .9; }
@@ -548,13 +321,18 @@
       background: var(--off-black);
     }
     .action {
-      min-width: 120px;
-      margin: 16px;
+      min-width: 152px;
+      min-height: 48px;
       padding: 12px 16px;
       border: 1px solid var(--wire);
       border-radius: 8px;
       background: var(--blush);
       color: var(--black);
+      cursor: pointer;
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
       transition: transform 180ms ease-out, background-color 300ms ease-out, border-color 300ms ease-out;
     }
     .action:hover { background: #212525; border-color: var(--off-black); transform: translateY(-2px); }
@@ -571,23 +349,27 @@
       0%, 100% { transform: scaleY(.25); }
       50% { transform: scaleY(1); }
     }
-    @keyframes scan {
-      0% { transform: translateX(-110%); }
-      100% { transform: translateX(420%); }
-    }
-    @keyframes confirmed {
-      from { opacity: .3; transform: translateY(3px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
     @media (max-height: 700px) {
       .connection-map { height: 44px; margin-bottom: 12px; }
       .route { inset-block: 12px; }
       .route-secondary { inset-block: 4px; }
       .route-node { top: 16px; }
-      .main { grid-template-rows: auto minmax(240px, 1fr) auto; }
       .signal { height: 32px; margin-bottom: 12px; }
       .hero { padding-block: 16px; }
-      .flow { gap: 8px; padding-block: 16px; }
+    }
+    .status-copy { min-height: 116px; }
+    .action-slot { display: grid; place-items: center; min-height: 88px; padding-top: 16px; }
+    h1, .message, .dialog-title, .dialog-message, button { overflow-wrap: anywhere; }
+    ::selection { background: var(--pink); color: var(--white); }
+    html { scrollbar-color: var(--wire) var(--white); }
+    body.modal-open { overflow: hidden; }
+    @media (max-width: 480px) {
+      .header-cell { padding-inline: 12px; }
+      .main { padding-inline: 16px; }
+      .hero { padding-inline: 0; }
+      .dialog-layer { padding: 16px; }
+      .dialog { max-height: calc(100dvh - 32px); }
+      .dialog-copy { padding: 24px; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
@@ -604,12 +386,12 @@
 <body>
   <div class="app">
     <header class="header">
-      <div class="header-cell">2.0</div>
+      <div class="header-cell">2.0.2</div>
       <div class="wordmark">FOG<span>Connection</span></div>
       <div id="clock" class="header-cell">--:--</div>
     </header>
 
-    <main class="main">
+    <main class="main" tabindex="-1">
       <section class="hero">
         <div class="connection-map" aria-hidden="true">
           <i class="route-node"></i>
@@ -617,70 +399,34 @@
           <div class="signal"><span></span><span></span><span></span></div>
           <i class="route-node"></i>
         </div>
-        <p id="kicker" class="kicker">Соединение</p>
-        <h1 id="title" aria-live="polite">Подготовка</h1>
-        <p id="message" class="message">Настраиваем соединение автоматически.</p>
-      </section>
-
-      <section class="flow" aria-label="Этапы настройки">
-        <article id="stageSystem" class="stage active">
-          <div class="stage-index">01</div>
-          <div class="stage-copy">
-            <div class="stage-title">Система</div>
-            <div class="stage-note">Проверка готовности</div>
-          </div>
-          <div class="stage-state">RUN</div>
-        </article>
-
-        <article id="stageEngine" class="stage">
-          <div class="stage-index">02</div>
-          <div class="stage-copy">
-            <div class="stage-title">Соединение</div>
-            <div class="stage-note">Автоматическая настройка</div>
-          </div>
-          <div class="stage-state">WAIT</div>
-        </article>
-
-        <article id="stageAccess" class="stage">
-          <div class="stage-index">03</div>
-          <div class="stage-copy">
-            <div class="stage-title">Доступ</div>
-            <div class="stage-note">Финальная проверка</div>
-          </div>
-          <div class="stage-state">WAIT</div>
-        </article>
-      </section>
-
-      <section class="result">
-        <div class="result-copy">
-          <div class="result-label">Status</div>
-          <div id="resultValue" class="result-value">Выполняется проверка</div>
+        <div id="statusText" class="status-copy" role="status" aria-live="polite" aria-atomic="true">
+          <h1 id="title">Подключаемся</h1>
+          <p id="message" class="message">Проверяем соединение автоматически.</p>
         </div>
-        <button id="actionButton" class="action" type="button" hidden>Повторить</button>
+        <div class="action-slot">
+          <button id="actionButton" class="action" type="button" hidden>Повторить</button>
+        </div>
       </section>
     </main>
 
     <footer class="footer">
-      <span>FOG PRIME / AUTO</span>
-      <div class="progress-track" aria-hidden="true"><div id="progressBar" class="progress-bar"></div></div>
+      <span>FOG PRIME</span>
     </footer>
   </div>
 
-  <div id="vpnDialog" class="dialog-layer" role="dialog" aria-modal="true" aria-labelledby="vpnTitle" hidden>
+  <div id="vpnDialog" class="dialog-layer" role="dialog" aria-modal="true" aria-labelledby="vpnTitle" aria-describedby="vpnMessage" hidden>
     <section class="dialog">
       <div class="dialog-copy">
-        <p class="dialog-label">Compatibility notice</p>
         <h2 id="vpnTitle" class="dialog-title">Обнаружен VPN</h2>
-        <p class="dialog-message">FOG не меняет настройки VPN. Проверим доступ через текущее подключение; если его недостаточно, попробуем подключение FOG.</p>
+        <p id="vpnMessage" class="dialog-message">FOG не меняет настройки VPN. Проверим доступ через текущее подключение; если его недостаточно, попробуем подключение FOG.</p>
       </div>
       <button id="vpnDismiss" class="dialog-action" type="button">Понятно</button>
     </section>
   </div>
 
-  <div id="updateDialog" class="dialog-layer" role="dialog" aria-modal="true" aria-labelledby="updateTitle" hidden>
+  <div id="updateDialog" class="dialog-layer" role="dialog" aria-modal="true" aria-labelledby="updateTitle" aria-describedby="updateMessage" hidden>
     <section class="dialog">
       <div class="dialog-copy">
-        <p class="dialog-label">Update available</p>
         <h2 id="updateTitle" class="dialog-title">Доступно обновление</h2>
         <p id="updateMessage" class="dialog-message">Новая версия FOG Prime готова к загрузке.</p>
       </div>
@@ -692,7 +438,10 @@
   </div>
 
   <script>
-    const stageIds = ["stageSystem", "stageEngine", "stageAccess"];
+    const app = document.querySelector(".app");
+    const main = document.querySelector("main");
+    const title = document.getElementById("title");
+    const message = document.getElementById("message");
     const actionButton = document.getElementById("actionButton");
     const vpnDialog = document.getElementById("vpnDialog");
     const vpnDismiss = document.getElementById("vpnDismiss");
@@ -705,69 +454,26 @@
     let vpnDismissed = false;
     let updatePending = false;
     let updateDismissed = false;
+    let updateVersion = null;
+    let activeDialog = null;
+    let returnFocus = null;
 
     function post(command) {
       window.chrome.webview.postMessage({ command });
     }
 
-    function setStage(index, state) {
-      const stage = document.getElementById(stageIds[index]);
-      const stateNode = stage.querySelector(".stage-state");
-      stage.className = `stage ${state}`.trim();
-      stateNode.textContent = state === "done" ? "Готово" : state === "active" ? "..." : state === "failed" ? "Сбой" : "";
+    function setText(node, value) {
+      if (node.textContent !== value) node.textContent = value;
     }
 
     function renderPrime(payload) {
       currentStatus = payload.status;
-      document.body.dataset.status = payload.status;
-      document.getElementById("kicker").textContent = "Соединение";
-      document.getElementById("title").textContent = payload.title;
-      document.getElementById("message").textContent = payload.message;
-      document.getElementById("progressBar").style.width = `${payload.progress}%`;
-
-      if (payload.status === "checking") {
-        setStage(0, "active");
-        setStage(1, "");
-        setStage(2, "");
-        document.getElementById("resultValue").textContent = "Проверяем готовность";
-      } else if (payload.status === "starting") {
-        setStage(0, "done");
-        setStage(1, "active");
-        setStage(2, "");
-        document.getElementById("resultValue").textContent = "Подбираем соединение";
-      } else if (payload.status === "testingDiscord") {
-        setStage(0, "done");
-        setStage(1, "done");
-        setStage(2, "active");
-        document.getElementById("resultValue").textContent = "Проверяем доступ";
-      } else if (payload.status === "ready" || payload.status === "vpnReady") {
-        setStage(0, "done");
-        setStage(1, "done");
-        setStage(2, "done");
-        document.getElementById("kicker").textContent = payload.status === "vpnReady" ? "VPN активен" : "FOG активен";
-        document.getElementById("resultValue").textContent = payload.status === "vpnReady" ? "VPN активен, связь готова" : "Соединение готово";
-        actionButton.textContent = "Выключить";
-        actionButton.hidden = false;
-      } else if (payload.status === "recovering") {
-        setStage(0, "done");
-        setStage(1, "active");
-        setStage(2, "");
-        document.getElementById("kicker").textContent = "Восстановление";
-        document.getElementById("resultValue").textContent = "Переключаем маршрут";
-        actionButton.hidden = true;
-      } else {
-        setStage(0, payload.diagnostics && payload.diagnostics.summary.fail > 0 ? "failed" : "done");
-        setStage(1, "done");
-        setStage(2, "failed");
-        document.getElementById("kicker").textContent = "Проверка доступа";
-        document.getElementById("resultValue").textContent = "Требуется повторная проверка";
-        actionButton.textContent = "Повторить";
-        actionButton.hidden = false;
-      }
-
-      if (!["ready", "vpnReady", "needsAttention"].includes(payload.status)) {
-        actionButton.hidden = true;
-      }
+      if (document.body.dataset.status !== currentStatus) document.body.dataset.status = currentStatus;
+      const ready = ["ready", "vpnReady"].includes(currentStatus);
+      setText(title, payload.title);
+      setText(message, payload.message);
+      setText(actionButton, ready ? "Выключить" : "Повторить");
+      actionButton.hidden = !ready && currentStatus !== "needsAttention";
     }
 
     function renderVpn(payload) {
@@ -785,27 +491,63 @@
     }
 
     function renderUpdate(payload) {
+      const version = String(payload.version);
+      if (version === updateVersion) return;
+      updateVersion = version;
       updatePending = true;
       updateDismissed = false;
-      updateMessage.textContent = `Версия ${payload.version} готова. Откроем официальную страницу релиза на GitHub.`;
+      setText(updateMessage, `Версия ${version} доступна. Откроем страницу релиза на GitHub, где можно скачать обновление.`);
       refreshDialogs();
     }
 
     function refreshDialogs() {
-      const showVpn = vpnWasActive && !vpnDismissed;
-      const vpnWasHidden = vpnDialog.hidden;
-      vpnDialog.hidden = !showVpn;
-
-      const showUpdate = !showVpn && updatePending && !updateDismissed;
-      const updateWasHidden = updateDialog.hidden;
-      updateDialog.hidden = !showUpdate;
-
-      if (showVpn && vpnWasHidden) {
-        vpnDismiss.focus();
-      } else if (showUpdate && updateWasHidden) {
-        updateOpen.focus();
+      const next = vpnWasActive && !vpnDismissed ? vpnDialog :
+        updatePending && !updateDismissed ? updateDialog : null;
+      if (next === activeDialog) return;
+      if (!activeDialog && next) returnFocus = document.activeElement;
+      for (const dialog of [vpnDialog, updateDialog]) {
+        dialog.hidden = dialog !== next;
+        dialog.inert = dialog !== next;
+      }
+      activeDialog = next;
+      app.inert = Boolean(next);
+      document.body.classList.toggle("modal-open", Boolean(next));
+      if (next) {
+        (next === vpnDialog ? vpnDismiss : updateOpen).focus({ preventScroll: true });
+      } else {
+        const target = returnFocus;
+        returnFocus = null;
+        if (target && target.isConnected && target !== document.body && target.getClientRects().length) {
+          target.focus({ preventScroll: true });
+        } else {
+          (actionButton.hidden ? main : actionButton).focus({ preventScroll: true });
+        }
       }
     }
+
+    document.addEventListener("keydown", event => {
+      if (!activeDialog) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (activeDialog === vpnDialog) vpnDismissed = true;
+        else updateDismissed = true;
+        refreshDialogs();
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        const buttons = [...activeDialog.querySelectorAll("button:not([disabled])")];
+        const index = buttons.indexOf(document.activeElement);
+        const next = index < 0 ? (event.shiftKey ? buttons.length - 1 : 0) :
+          (index + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length;
+        buttons[next].focus();
+      }
+    });
+
+    document.addEventListener("focusin", event => {
+      if (activeDialog && !activeDialog.contains(event.target)) {
+        (activeDialog === vpnDialog ? vpnDismiss : updateOpen).focus({ preventScroll: true });
+      }
+    });
 
     window.chrome.webview.addEventListener("message", (event) => {
       const { type, payload } = event.data;
@@ -848,9 +590,11 @@
     }
 
     updateClock();
-    document.addEventListener("visibilitychange", () => {
+    function syncVisibility() {
       document.documentElement.dataset.hidden = String(document.hidden);
-    });
+    }
+    document.addEventListener("visibilitychange", syncVisibility);
+    syncVisibility();
     window.setInterval(updateClock, 30000);
     post("ready");
   </script>

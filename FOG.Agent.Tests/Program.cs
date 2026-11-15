@@ -1,6 +1,7 @@
 using FOG.Agent;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Diagnostics;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 
@@ -41,6 +42,9 @@ if (args is ["--check-update", var currentVersion])
 
 var tests = new (string Name, Action Run)[]
 {
+    ("simple connection view hides transient failures without inventing readiness", ConnectionPresentationTests.GraceAndReadiness),
+    ("simple connection view bounds recovery and resets on retry", ConnectionPresentationTests.RecoveryAndReset),
+    ("simple connection view distinguishes confirmed VPN and missing transport", ConnectionPresentationTests.HonestVpnAndStoppedState),
     ("validates session-specific IPC names", AssertSessionPipeNames),
     ("validates bounded Gateway response bodies", AssertGatewayBodies),
     ("requires Discord WebSocket HELLO", AssertGatewayHello),
@@ -59,7 +63,12 @@ var tests = new (string Name, Action Run)[]
     ("probes stable service identities across cycles", AssertServiceProbeIdentities),
     ("confirms slow endpoints without masking blocked API", AssertSlowProbeConfirmation),
     ("accepts recovered transient probes", AssertTransientProbeRecovery),
-    ("bounds persistent session recovery", AssertSessionRecovery),
+    ("preserves established Engine sessions after persistent probe failure", AssertEstablishedEnginePreserved),
+    ("does not apply cancelled Engine probe results", AssertCancelledEngineProbes),
+    ("rejects healthy probe results after Engine exit", AssertExitedEngineProbes),
+    ("rejects Engine cache for direct tunnel reconciliation", AssertSupervisorDirectCache),
+    ("does not defer to a tunnel using Engine cache", AssertSupervisorTunnelDeferralCache),
+    ("propagates DNS caller cancellation before resolution", AssertDnsCallerCancellation),
     ("detects EasyAntiCheat", () => AssertBlocked("EasyAntiCheat")),
     ("detects EasyAntiCheat EOS executable", () => AssertBlocked("EasyAntiCheat_EOS.exe")),
     ("detects protected game launcher", () => AssertBlocked("start_protected_game")),
@@ -447,19 +456,131 @@ static void AssertTransientProbeRecovery()
     Assert(!failed.Ok, "Repeated failures accepted");
 }
 
-static void AssertSessionRecovery()
+static void AssertEstablishedEnginePreserved()
 {
-    var policy = new SessionRecoveryPolicy();
-    var now = DateTimeOffset.UtcNow;
-    Assert(!policy.Observe(false, now), "First failure restarted session");
-    Assert(!policy.Observe(false, now.AddSeconds(30)), "Early restart");
-    Assert(policy.Observe(false, now.AddSeconds(60)), "Persistent failure not recovered");
-    for (var i = 1; i < 10; i++)
+    using var fixture = new SupervisorProbeFixture(startChild: true);
+    var engine = fixture.Get("_engine");
+    var profile = fixture.Get("_activeProfile");
+    // Make this regression fail immediately against the old 60-second recovery path.
+    var legacy = typeof(EngineSupervisor).GetField("_sessionRecovery", BindingFlags.Instance | BindingFlags.NonPublic)
+        ?.GetValue(fixture.Supervisor);
+    if (legacy is not null)
     {
-        Assert(!policy.Observe(false, now.AddSeconds(60 + i * 20)), "Recovery ignored cooldown");
+        legacy.GetType().GetField("_failedSince", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(legacy, DateTimeOffset.UtcNow.AddMinutes(-2));
+        legacy.GetType().GetField("_failures", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(legacy, 2);
     }
-    Assert(!policy.Observe(true, now.AddSeconds(300)), "Healthy session restarted");
-    Assert(!policy.Observe(false, now.AddSeconds(400)), "Healthy observation did not reset failures");
+
+    for (var i = 0; i < 100; i++)
+    {
+        fixture.Set("_lastProbes", new[] { Probe(i % 2 == 0 ? "gateway" : "discord-voice", false) });
+        var snapshot = fixture.Apply(CancellationToken.None);
+        Assert(!fixture.Child!.HasExited, "Persistent service failure terminated the dedicated live Engine child");
+        Assert(ReferenceEquals(engine, fixture.Get("_engine")), "Probe failure replaced the live Engine instance");
+        Assert(ReferenceEquals(profile, fixture.Get("_activeProfile")), "Probe failure changed the active profile");
+        Assert(snapshot.State == "degraded" && snapshot.EngineRunning && !snapshot.ConnectionHealthy,
+            "Qualified live Engine must remain running and degraded after failed probes");
+        Assert(snapshot.ActiveProfile == fixture.Profile.Id, "Degraded snapshot lost the active profile");
+        fixture.AssertPreferenceUnchanged();
+    }
+}
+
+static void AssertCancelledEngineProbes()
+{
+    foreach (var required in new[] { false, true })
+    {
+        using var fixture = new SupervisorProbeFixture(startChild: true);
+        var search = (ProfileSearch)fixture.Get("_profileSearch")!;
+        search.Record("seed", new[] { Probe("gateway", true) });
+        if (required) search.IncludeVoiceRequirement(new[] { Probe("discord-voice", false) });
+        var probes = new[] { Probe(required ? "gateway" : "discord-voice", false) };
+        fixture.Set("_lastProbes", probes);
+        fixture.Set("_startupQualificationPending", true);
+        fixture.Set("_startupQualificationFailures", 1);
+        var previousSnapshot = fixture.Get("_latestSnapshot");
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        try
+        {
+            fixture.Apply(cancellation.Token);
+            Assert(false, "Cancelled probe application did not throw");
+        }
+        catch (OperationCanceledException ex)
+        {
+            Assert(ex.CancellationToken == cancellation.Token, "Caller cancellation token was not preserved");
+        }
+        Assert(ReferenceEquals(probes, fixture.Get("_lastProbes")), "Cancellation replaced or augmented probe results");
+        Assert(search.VoiceRequired == required && search.Best("seed") == "seed", "Cancellation mutated profile search");
+        Assert((bool)fixture.Get("_startupQualificationPending")! && (int)fixture.Get("_startupQualificationFailures")! == 1,
+            "Cancellation advanced startup qualification");
+        Assert(ReferenceEquals(previousSnapshot, fixture.Get("_latestSnapshot")), "Cancellation published a new snapshot");
+        Assert(!fixture.Child!.HasExited, "Cancellation terminated the dedicated child");
+        fixture.AssertPreferenceUnchanged();
+    }
+}
+
+static void AssertExitedEngineProbes()
+{
+    foreach (var desiredRunning in new[] { true, false })
+    {
+        using var fixture = new SupervisorProbeFixture();
+        fixture.Set("_desiredRunning", desiredRunning);
+        fixture.Set("_lastProbes", new[] { Probe("gateway", true) });
+        var snapshot = fixture.Apply(CancellationToken.None);
+        Assert(snapshot.State == (desiredRunning ? "recovering" : "stopped"), "Dead Engine retained ready state");
+        Assert(!snapshot.EngineRunning && !snapshot.ConnectionHealthy && snapshot.Probes.Count == 0,
+            "Dead Engine published cached successful probes");
+        Assert(((IReadOnlyList<FOG.Protocol.ProbeResult>)fixture.Get("_lastProbes")!).Count == 0,
+            "Dead Engine probe cache was not cleared");
+        fixture.AssertPreferenceUnchanged();
+    }
+}
+
+static void AssertSupervisorDirectCache()
+{
+    foreach (var directMode in new[] { false, true })
+    {
+        using var fixture = new SupervisorProbeFixture(withTunnel: true);
+        fixture.Set("_directMode", directMode);
+        fixture.Set("_lastProbes", new[] { Probe("gateway", true) });
+        var snapshot = fixture.Supervisor.ReconcileCompatibilityAsync(CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+        Assert(snapshot.State == (directMode ? "ready" : "stopped"), "Reconciliation promoted an Engine-only cache");
+        Assert(snapshot.ConnectionHealthy == directMode && (bool)fixture.Get("_directMode")! == directMode,
+            "Reconciliation changed the provenance of cached probe success");
+    }
+}
+
+static void AssertSupervisorTunnelDeferralCache()
+{
+    foreach (var directMode in new[] { false, true })
+    {
+        using var fixture = new SupervisorProbeFixture(withTunnel: true);
+        fixture.Set("_directMode", directMode);
+        fixture.Set("_lastProbes", new[] { Probe("gateway", true) });
+        var snapshot = fixture.Invoke<FOG.Protocol.AgentSnapshot?>("DeferToActiveTunnelAsync", CancellationToken.None);
+        Assert(directMode ? snapshot is { State: "ready", ConnectionHealthy: true } : snapshot is null,
+            "Tunnel deferral reused cached probes that did not belong to direct mode");
+        Assert((bool)fixture.Get("_directMode")! == directMode, "Tunnel deferral promoted an Engine-only cache");
+    }
+}
+
+static void AssertDnsCallerCancellation()
+{
+    var method = typeof(ConnectionHealthChecker).GetMethod("CheckDnsAttemptAsync", BindingFlags.Static | BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException("DNS probe method was not found");
+    using var cancellation = new CancellationTokenSource();
+    cancellation.Cancel();
+    var task = (Task<ConnectionHealthChecker.ProbeAttempt>)method.Invoke(null, new object[] { 0, cancellation.Token })!;
+    try
+    {
+        task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+        Assert(false, "DNS caller cancellation was converted to a failed probe");
+    }
+    catch (OperationCanceledException ex)
+    {
+        Assert(ex.CancellationToken == cancellation.Token, "DNS probe lost the caller cancellation token");
+    }
 }
 
 static void AssertBlocked(string processName)
@@ -839,6 +960,106 @@ static void Assert(bool condition, string message)
     if (!condition)
     {
         throw new InvalidOperationException(message);
+    }
+}
+
+internal sealed class SupervisorProbeFixture : IDisposable
+{
+    private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), $"fog-supervisor-test-{Guid.NewGuid():N}");
+    private readonly string _preferencePath;
+    private readonly string _preferenceBefore;
+    private Process? _engineProcess;
+    public Process? Child { get; private set; }
+    public EngineSupervisor Supervisor { get; }
+    public FOG.Protocol.EngineProfile Profile { get; } = new("test-live-profile", 1, "FOG.Engine.exe", new[] { "--test-only" });
+
+    public SupervisorProbeFixture(bool startChild = false, bool withTunnel = false)
+    {
+        _preferencePath = Path.Combine(_directory, "preferred-profile.json");
+        var store = new PreferredProfileStore(_preferencePath, NullLogger<PreferredProfileStore>.Instance);
+        store.Save(Profile.Id, "test-context");
+        _preferenceBefore = File.ReadAllText(_preferencePath);
+        var tunnel = new NetworkAdapterInfo("Test VPN", "Test WireGuard Tunnel",
+            System.Net.NetworkInformation.NetworkInterfaceType.Tunnel,
+            System.Net.NetworkInformation.OperationalStatus.Up, "test-tunnel", "test-route");
+        var adapters = new FakeAdapterSource(withTunnel ? new[] { tunnel } : Array.Empty<NetworkAdapterInfo>());
+        // Unused launch, probe and driver dependencies must not touch the machine even on a regression.
+        Supervisor = new EngineSupervisor(Microsoft.Extensions.Options.Options.Create(new AgentOptions()),
+            null!, null!, null!, new CompatibilityGuard(new FakeSignalSource()), new ExternalTunnelDetector(adapters),
+            new DriverConflictBackoff(), new ProfileRotation(), store, null!,
+            new EngineSessionLeaseStore(Path.Combine(_directory, "engine-session.json"), null,
+                NullLogger<EngineSessionLeaseStore>.Instance), NullLogger<EngineSupervisor>.Instance);
+        Set("_activeProfile", Profile);
+        Set("_rememberedProfileId", Profile.Id);
+        Set("_preferredContext", "test-context");
+        Set("_preferredProfileLoaded", true);
+        if (withTunnel)
+            Set("_activeTunnelIdentity", string.Join('|', tunnel.Name, tunnel.Description, tunnel.Type,
+                tunnel.Status, tunnel.Id, tunnel.ConnectionSignature));
+        if (!startChild) return;
+
+        try
+        {
+            var executable = Environment.ProcessPath ?? throw new InvalidOperationException("Test executable is unavailable");
+            var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true };
+            if (Path.GetFileNameWithoutExtension(executable).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+                start.ArgumentList.Add(Assembly.GetExecutingAssembly().Location);
+            start.ArgumentList.Add("--lifetime-child");
+            Child = Process.Start(start) ?? throw new InvalidOperationException("Could not start dedicated test child");
+            _engineProcess = Process.GetProcessById(Child.Id);
+            var instanceType = typeof(EngineSupervisor).GetNestedType("EngineInstance", BindingFlags.NonPublic)
+                ?? throw new InvalidOperationException("EngineInstance type was not found");
+            var instance = Activator.CreateInstance(instanceType, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                null, new object[] { _engineProcess, Profile.Id, DateTimeOffset.UtcNow.AddMinutes(-10) }, null);
+            Set("_engine", instance ?? throw new InvalidOperationException("EngineInstance could not be constructed"));
+            Set("_desiredRunning", true);
+        }
+        catch
+        {
+            Dispose();
+            throw;
+        }
+    }
+
+    public object? Get(string name) => Field(name).GetValue(Supervisor);
+    public void Set(string name, object? value) => Field(name).SetValue(Supervisor, value);
+    private static FieldInfo Field(string name) => typeof(EngineSupervisor).GetField(name, PrivateInstance)
+        ?? throw new InvalidOperationException($"Supervisor field {name} was not found");
+
+    public T Invoke<T>(string name, params object[] arguments)
+    {
+        var method = typeof(EngineSupervisor).GetMethod(name, PrivateInstance)
+            ?? throw new InvalidOperationException($"Supervisor method {name} was not found");
+        return ((Task<T>)method.Invoke(Supervisor, arguments)!).WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+    }
+
+    public FOG.Protocol.AgentSnapshot Apply(CancellationToken token) =>
+        Invoke<FOG.Protocol.AgentSnapshot>("ApplyEngineProbeResultsAsync", "Test probes are degraded", token);
+
+    public void AssertPreferenceUnchanged()
+    {
+        if (!File.Exists(_preferencePath) || File.ReadAllText(_preferencePath) != _preferenceBefore ||
+            !Equals(Get("_rememberedProfileId"), Profile.Id))
+            throw new InvalidOperationException("Probe application erased or changed the preferred profile");
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            if (Child is not null && !Child.HasExited)
+            {
+                Child.Kill(entireProcessTree: false);
+                if (!Child.WaitForExit(5000)) throw new TimeoutException("Dedicated test child did not exit");
+            }
+        }
+        finally
+        {
+            Child?.Dispose();
+            _engineProcess?.Dispose();
+            if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
+        }
     }
 }
 
