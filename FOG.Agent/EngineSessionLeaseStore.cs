@@ -8,7 +8,7 @@ namespace FOG.Agent;
 
 public sealed class EngineSessionLeaseStore
 {
-    private const int LeaseVersion = 1;
+    private const int LeaseVersion = 2;
     private readonly string _leasePath;
     private readonly byte[]? _sessionKey;
     private readonly ILogger<EngineSessionLeaseStore> _logger;
@@ -68,7 +68,7 @@ public sealed class EngineSessionLeaseStore
         }
     }
 
-    public void Save(Process process, string profileId, string executablePath)
+    public void Save(Process process, string profileId, string executablePath, bool gameFilterEnabled = false)
     {
         if (_sessionKey is null)
         {
@@ -83,7 +83,8 @@ public sealed class EngineSessionLeaseStore
                 process.StartTime.ToUniversalTime().Ticks,
                 profileId,
                 Path.GetFullPath(executablePath),
-                string.Empty);
+                string.Empty,
+                gameFilterEnabled);
             var lease = unsigned with { Signature = ComputeSignature(unsigned) };
             var temporaryPath = _leasePath + ".tmp";
             File.WriteAllText(temporaryPath, JsonSerializer.Serialize(lease, _json));
@@ -141,7 +142,8 @@ public sealed class EngineSessionLeaseStore
             lease.ProcessId,
             lease.ProcessStartUtcTicks,
             lease.ProfileId,
-            Path.GetFullPath(lease.ExecutablePath));
+            Path.GetFullPath(lease.ExecutablePath),
+            lease.GameFilterEnabled);
         return Convert.ToHexString(HMACSHA256.HashData(_sessionKey!, Encoding.UTF8.GetBytes(payload)));
     }
 
@@ -170,4 +172,5 @@ public sealed record EngineSessionLease(
     long ProcessStartUtcTicks,
     string ProfileId,
     string ExecutablePath,
-    string Signature);
+    string Signature,
+    bool GameFilterEnabled = false);

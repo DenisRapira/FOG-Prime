@@ -337,6 +337,61 @@
     }
     .action:hover { background: #212525; border-color: var(--off-black); transform: translateY(-2px); }
     .action:active { transform: translateY(0); }
+    .game-filter {
+      width: min(100%, 280px);
+      margin: 24px auto 0;
+      padding-top: 16px;
+      border-top: 1px solid var(--wire);
+      text-align: left;
+    }
+    .game-filter-switch {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      width: 100%;
+      min-height: 44px;
+      padding: 4px 0;
+      border: 0;
+      background: transparent;
+      color: var(--black);
+      font-size: 14px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .switch-track {
+      flex: 0 0 40px;
+      height: 24px;
+      padding: 3px;
+      border: 1px solid var(--off-black);
+      border-radius: 12px;
+      background: var(--blush);
+    }
+    .switch-track::before {
+      content: "";
+      display: block;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--off-black);
+      transition: transform 180ms ease-out, background-color 180ms ease-out;
+    }
+    .game-filter-switch[aria-checked="true"] .switch-track { border-color: var(--pink); }
+    .game-filter-switch[aria-checked="true"] .switch-track::before {
+      transform: translateX(16px);
+      background: var(--pink);
+    }
+    .game-filter-switch:hover:not(:disabled) .switch-track { border-color: var(--black); }
+    .game-filter-switch:disabled { opacity: .6; cursor: wait; }
+    .game-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      color: var(--off-black);
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
     button:focus-visible { outline: 2px solid var(--pink); outline-offset: 3px; }
     .dialog-layer:not([hidden]) { animation: veil-in 180ms ease-out; }
     .dialog-layer:not([hidden]) .dialog { animation: enter 280ms cubic-bezier(.2,.8,.2,1) both; }
@@ -406,6 +461,13 @@
         <div class="action-slot">
           <button id="actionButton" class="action" type="button" hidden>Повторить</button>
         </div>
+        <div class="game-filter">
+          <button id="gameFilterSwitch" class="game-filter-switch" type="button" role="switch" aria-checked="false" aria-labelledby="gameFilterLabel" aria-describedby="gameList" aria-busy="false">
+            <span id="gameFilterLabel">Игровой фильтр</span>
+            <span class="switch-track" aria-hidden="true"></span>
+          </button>
+          <ul id="gameList" class="game-list" aria-label="Игры"><li>ROB RUN</li></ul>
+        </div>
       </section>
     </main>
 
@@ -443,6 +505,7 @@
     const title = document.getElementById("title");
     const message = document.getElementById("message");
     const actionButton = document.getElementById("actionButton");
+    const gameFilterSwitch = document.getElementById("gameFilterSwitch");
     const vpnDialog = document.getElementById("vpnDialog");
     const vpnDismiss = document.getElementById("vpnDismiss");
     const updateDialog = document.getElementById("updateDialog");
@@ -474,6 +537,9 @@
       setText(message, payload.message);
       setText(actionButton, ready ? "Выключить" : "Повторить");
       actionButton.hidden = !ready && currentStatus !== "needsAttention";
+      gameFilterSwitch.setAttribute("aria-checked", String(payload.gameFilterEnabled === true));
+      gameFilterSwitch.disabled = payload.gameFilterBusy === true;
+      gameFilterSwitch.setAttribute("aria-busy", String(gameFilterSwitch.disabled));
     }
 
     function renderVpn(payload) {
@@ -517,7 +583,7 @@
       } else {
         const target = returnFocus;
         returnFocus = null;
-        if (target && target.isConnected && target !== document.body && target.getClientRects().length) {
+        if (target && target.isConnected && target !== document.body && !target.disabled && target.getClientRects().length) {
           target.focus({ preventScroll: true });
         } else {
           (actionButton.hidden ? main : actionButton).focus({ preventScroll: true });
@@ -583,6 +649,10 @@
         actionButton.hidden = true;
         post("runPrime");
       }
+    });
+
+    gameFilterSwitch.addEventListener("click", () => {
+      if (!gameFilterSwitch.disabled) post("toggleGameFilter");
     });
 
     function updateClock() {

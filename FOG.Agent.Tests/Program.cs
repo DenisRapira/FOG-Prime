@@ -57,6 +57,10 @@ var tests = new (string Name, Action Run)[]
     ("requires voice recovery after changing profiles", AssertVoiceSearchRequirement),
     ("wakes startup health checks without periodic timer delay", AssertHealthRefreshSignal),
     ("prioritizes scoped FOG bootstrap strategy", AssertBootstrapStrategy),
+    ("bounds game filtering after service-specific rules", AssertGameFilter),
+    ("persists game filter choice and defaults safely", AssertGameFilterSettings),
+    ("locks game assets against live mutation", AssertGameAssetLocks),
+    ("applies game filter choice without disrupting direct VPN mode", AssertGameFilterTransition),
     ("rejects a mismatched named pipe server", AssertPipeServerIdentity),
     ("terminates children after owner crash", AssertCrashCleanup),
     ("requires endpoint-specific HTTP success", AssertHttpExpectations),
@@ -316,8 +320,123 @@ static void AssertBootstrapStrategy()
     Assert(tls.Contains("--dpi-desync-hostfakesplit-mod=host=mail.ru,altorder=1"), "Incorrect TLS host split");
     Assert(rules.Any(rule => rule.Contains("--hostlist-domains=discord.media") && rule.Contains("--dpi-desync-repeats=7") &&
         rule.Contains("--dpi-desync-split-seqovl=681")), "Media TLS rule missing");
-    Assert(profile.Arguments.All(argument => !argument.Contains("--ipset") && !argument.Contains("--dpi-desync-any-protocol")),
-        "Bootstrap strategy broadens interception beyond target services");
+    Assert(rules.Take(rules.Count - 2).SelectMany(rule => rule).All(argument => !argument.Contains("--ipset") && !argument.Contains("--dpi-desync-any-protocol")),
+        "Game filtering changed the original service-specific rules");
+}
+
+static void AssertGameFilter()
+{
+    using var resource = typeof(ProfileCatalog).Assembly.GetManifestResourceStream("FOG.Agent.TrustedProfiles.json")!;
+    var profiles = System.Text.Json.JsonSerializer.Deserialize<FOG.Protocol.EngineProfile[]>(resource,
+        new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+    foreach (var profile in profiles)
+    {
+        Assert(profile.Arguments.Count <= 128, "Game filtering exceeded the argument budget");
+        foreach (var capture in new[] { "--wf-tcp=80,443,1024-65535", "--wf-udp=443,1024-65535" })
+            Assert(profile.Arguments.Count(value => value.StartsWith(capture.Split('=')[0] + "=")) == 1 &&
+                profile.Arguments.Contains(capture), "Capture filters replaced or duplicated service coverage");
+        var rules = new List<List<string>> { new() };
+        foreach (var argument in profile.Arguments)
+        {
+            if (argument == "--new") rules.Add(new());
+            else rules[^1].Add(argument);
+        }
+        Assert(rules.Take(rules.Count - 2).SelectMany(rule => rule).All(value =>
+            !value.StartsWith("--ipset=") && !value.StartsWith("--dpi-desync-any-protocol=")),
+            "A game rule precedes service rules");
+        var tcp = rules[^2];
+        var udp = rules[^1];
+        Assert(tcp.Contains("--filter-tcp=1024-65535") && udp.Contains("--filter-udp=1024-65535"), "Unexpected game port range");
+        foreach (var rule in new[] { tcp, udp })
+        {
+            foreach (var required in new[] { "--ipset=${runtime}\\game-ipset.txt", "--ipset-exclude=${runtime}\\game-exclude.txt",
+                "--dpi-desync-any-protocol=1", "--dpi-desync-cutoff=n4" })
+                Assert(rule.Contains(required), "Missing game scope or packet cutoff: " + required);
+            Assert(rule.Count(value => value.StartsWith("--ipset=")) == 1, "Multiple game include lists");
+            Assert(!rule.Any(value => value.StartsWith("--hostlist") || value == "--ipset=ANY"), "Unexpected game scope expansion");
+        }
+        Assert(tcp.Contains("--dpi-desync=fake,multisplit") && tcp.Contains("--dpi-desync-repeats=8") &&
+            tcp.Contains("--dpi-desync-split-seqovl=664"), "Incorrect TCP game strategy");
+        Assert(udp.Contains("--dpi-desync=fake") && udp.Contains("--dpi-desync-repeats=10") &&
+            udp.Contains("--dpi-desync-fake-unknown-udp=${runtime}\\ACTIVE_GAME_UDP.bin"), "Incorrect UDP game strategy");
+        var normal = GameFilterPolicy.Apply(profile, false);
+        Assert(normal.Arguments.Count == profile.Arguments.Count - 26, "Disabled filter left extra rules");
+        Assert(normal.Arguments.Contains("--wf-tcp=80,443,2053,2083,2087,2096,8443") &&
+            normal.Arguments.Contains("--wf-udp=443,19294-19344,50000-50100"), "Disabled filter did not restore narrow capture");
+        Assert(normal.Arguments.Skip(2).SequenceEqual(profile.Arguments.Skip(2).Take(normal.Arguments.Count - 2)),
+            "Disabled filter changed service rules");
+        Assert(normal.Arguments.Any(value => value.Contains("robrun.com,kefirgames.com,robrun.wiki,robrun.site,robrun.org")),
+            "ROB RUN service addresses missing");
+        Assert(ReferenceEquals(GameFilterPolicy.Apply(profile, true), profile), "Enabled filter rewrote trusted rules");
+    }
+}
+
+static void AssertGameFilterTransition()
+{
+    foreach (var direct in new[] { false, true })
+    {
+        using var fixture = new SupervisorProbeFixture(startChild: direct, withTunnel: direct);
+        fixture.Set("_directMode", direct);
+        foreach (var enabled in new[] { true, true, false })
+        {
+            var snapshot = fixture.Supervisor.SetGameFilterAsync(enabled, CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+            Assert(snapshot.GameFilterEnabled == enabled, "Supervisor failed to confirm filter choice");
+            Assert((bool)fixture.Get("_directMode")! == direct, "Filter transition changed VPN mode");
+            if (direct) Assert(!fixture.Child!.HasExited, "Filter transition disrupted direct VPN transport");
+        }
+    }
+}
+
+static void AssertGameAssetLocks()
+{
+    var directory = Path.Combine(Path.GetTempPath(), "fog-game-lock-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
+    var names = new[] { "game-ipset.txt", "game-exclude.txt", "ACTIVE_GAME_UDP.bin", "tls_clienthello_www_sferum_ru.bin" };
+    try
+    {
+        foreach (var name in names) File.WriteAllText(Path.Combine(directory, name), "test");
+        using (GameFilterAssetLease.Acquire(directory))
+        {
+            foreach (var name in names)
+            {
+                var path = Path.Combine(directory, name);
+                Assert(File.ReadAllText(path) == "test", "Game asset lock blocked native reads");
+                var blocked = false;
+                try { File.WriteAllText(path, ""); }
+                catch (IOException) { blocked = true; }
+                Assert(blocked, "Live game asset mutation was not blocked");
+                blocked = false;
+                try { File.Delete(path); }
+                catch (IOException) { blocked = true; }
+                Assert(blocked, "Live game asset deletion was not blocked");
+            }
+        }
+        foreach (var name in names) File.WriteAllText(Path.Combine(directory, name), "released");
+    }
+    finally { Directory.Delete(directory, recursive: true); }
+}
+
+static void AssertGameFilterSettings()
+{
+    var directory = Path.Combine(Path.GetTempPath(), "fog-game-settings-" + Guid.NewGuid().ToString("N"));
+    var path = Path.Combine(directory, "game-filter.json");
+    try
+    {
+        var settings = new GameFilterSettings(path);
+        Assert(!settings.Load(), "Missing settings enabled broad filtering");
+        settings.Save(true);
+        Assert(new GameFilterSettings(path).Load(), "Enabled choice was not persisted");
+        settings.Save(false);
+        Assert(!new GameFilterSettings(path).Load(), "Disabled choice was not persisted");
+        foreach (var invalid in new[] { "{", "null", "1", new string('x', 100) })
+        {
+            File.WriteAllText(path, invalid);
+            Assert(!settings.Load(), "Invalid settings enabled broad filtering");
+        }
+        Assert(Directory.GetFiles(directory).Length == 1, "Settings left temporary files");
+    }
+    finally { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); }
 }
 
 static void AssertPipeServerIdentity()
@@ -728,6 +847,8 @@ static void AssertAgentCommandTimeouts()
 {
     Assert(FOG.WebView2.AgentClient.GetResponseTimeout("start") == TimeSpan.FromSeconds(90), "Start timeout is too short for profile rotation.");
     Assert(FOG.WebView2.AgentClient.GetResponseTimeout("recheck") == TimeSpan.FromSeconds(90), "Recheck timeout is too short for stable probes.");
+    foreach (var command in new[] { "game-filter-on", "game-filter-off" })
+        Assert(FOG.WebView2.AgentClient.GetResponseTimeout(command) == TimeSpan.FromSeconds(90), "Game filter timeout is too short for reconnecting.");
     Assert(FOG.WebView2.AgentClient.GetResponseTimeout("status") == TimeSpan.FromSeconds(10), "Status timeout must remain bounded.");
     Assert(FOG.WebView2.AgentClient.GetResponseTimeout("shutdown") == TimeSpan.FromSeconds(30), "Shutdown timeout is too short for an in-flight probe.");
 }
@@ -850,6 +971,12 @@ static void AssertEngineSessionLease()
         File.WriteAllText(leasePath, tampered.ToJsonString());
         Assert(store.TryLoad() is null, "A tampered Engine session lease was accepted.");
         Assert(!File.Exists(leasePath), "A tampered Engine session lease was not removed.");
+        store.Save(process, "fog2-balanced", executable, gameFilterEnabled: true);
+        Assert(store.TryLoad()?.GameFilterEnabled == true, "Lease lost its effective game filter mode");
+        tampered = JsonNode.Parse(File.ReadAllText(leasePath))!.AsObject();
+        tampered["gameFilterEnabled"] = false;
+        File.WriteAllText(leasePath, tampered.ToJsonString());
+        Assert(store.TryLoad() is null, "Lease accepted a tampered game filter mode");
     }
     finally
     {
@@ -991,6 +1118,7 @@ internal sealed class SupervisorProbeFixture : IDisposable
             new EngineSessionLeaseStore(Path.Combine(_directory, "engine-session.json"), null,
                 NullLogger<EngineSessionLeaseStore>.Instance), NullLogger<EngineSupervisor>.Instance);
         Set("_activeProfile", Profile);
+        Set("_gameFilterSettings", new GameFilterSettings(Path.Combine(_directory, "game-filter.json")));
         Set("_rememberedProfileId", Profile.Id);
         Set("_preferredContext", "test-context");
         Set("_preferredProfileLoaded", true);

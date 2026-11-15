@@ -1,0 +1,16 @@
+{
+  "source": "https://github.com/Flowseal/zapret-discord-youtube",
+  "commit": "176f56dc3f11ce5915c26abcdde903f93d835b64",
+  "files": {
+    "ACTIVE_GAME_UDP.bin": "bin/ACTIVE_GAME_UDP.bin",
+    "tls_clienthello_www_sferum_ru.bin": "bin/tls_clienthello_www_sferum_ru.bin",
+    "game-ipset.txt": ".service/ipset-service.txt",
+    "game-exclude.txt": "lists/ipset-exclude.txt"
+  },
+  "sha256": {
+    "ACTIVE_GAME_UDP.bin": "E065870CB0D13152E6132807BBF42218A9E7CD8D96F5602B61674CC540F3A56E",
+    "tls_clienthello_www_sferum_ru.bin": "E6DD8D724EECC6A7340BF64E2EBEC81C60BC4E078C6F702B4B6BA9BF184180AD",
+    "game-ipset.txt": "F4250118B065E0977547B3E4412C6F15489FFCFFB0D11C4EF71AF8FDD80B21FB",
+    "game-exclude.txt": "36159CA57996843462CCCEF23B576CB461DFAA8738E2AB01807DB5A6C1746725"
+  }
+}

@@ -31,7 +31,8 @@ public sealed record AgentSnapshot(
     IReadOnlyList<ProbeResult> Probes,
     CompatibilityInfo? Compatibility = null,
     string TransportMode = "engine",
-    string? ActiveTunnel = null);
+    string? ActiveTunnel = null,
+    bool GameFilterEnabled = false);
 
 public sealed record CompatibilityInfo(
     bool Paused,

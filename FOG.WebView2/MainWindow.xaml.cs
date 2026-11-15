@@ -23,6 +23,8 @@ public partial class MainWindow : Window
     private readonly UpdateChecker _updateChecker = new();
     private readonly ConnectionPresentation _presentation = new();
     private readonly SemaphoreSlim _primeGate = new(1, 1);
+    private bool _gameFilterEnabled;
+    private bool _gameFilterBusy;
     private readonly CancellationTokenSource _monitorCancellation = new();
     private bool _primeStarted;
     private bool _monitorStarted;
@@ -224,6 +226,9 @@ public partial class MainWindow : Window
                 case "runPrime":
                     await RunPrimeAsync(autoStart: true, restart: true);
                     break;
+                case "toggleGameFilter":
+                    await ToggleGameFilterAsync();
+                    break;
                 case "close":
                     Close();
                     break;
@@ -235,7 +240,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             DiagnosticLog.Write("UI", "Interface command failed", ex);
-            await PostAsync("prime", new PrimePayload("needsAttention", "Не удалось подключиться", "Попробуйте ещё раз.", 0, null, Array.Empty<CheckItem>()));
+            await PostAsync("prime", new PrimePayload("needsAttention", "Не удалось подключиться", "Попробуйте ещё раз.", 0, null, Array.Empty<CheckItem>(), _gameFilterEnabled, _gameFilterBusy));
         }
     }
 
@@ -268,6 +273,30 @@ public partial class MainWindow : Window
         e.State = CoreWebView2PermissionState.Deny;
     }
 
+    private async Task ToggleGameFilterAsync()
+    {
+        if (!await _primeGate.WaitAsync(0)) return;
+        _gameFilterBusy = true;
+        try
+        {
+            await RenderSnapshotAsync(null, null);
+            var response = await _agentClient.SendAsync(_gameFilterEnabled ? "game-filter-off" : "game-filter-on", _monitorCancellation.Token);
+            if (!response.Ok) throw new InvalidOperationException(response.Message);
+            _presentation.Reset();
+            await RenderSnapshotAsync(response.Snapshot, null);
+        }
+        finally
+        {
+            _gameFilterBusy = false;
+            _primeGate.Release();
+            if (!_monitorCancellation.IsCancellationRequested)
+            {
+                var response = await _agentClient.SendAsync("status", _monitorCancellation.Token);
+                await RenderSnapshotAsync(response.Snapshot, null);
+            }
+        }
+    }
+
     private async Task RunPrimeAsync(bool autoStart, bool restart = false)
     {
         if (!await _primeGate.WaitAsync(0))
@@ -280,16 +309,16 @@ public partial class MainWindow : Window
             _autoStartRequested |= autoStart;
             _presentation.Reset();
             _presentation.Present(null);
-            await PostAsync("prime", new PrimePayload("checking", "Подключаемся", "Это займёт немного времени.", 0, null, Array.Empty<CheckItem>()));
+            await PostAsync("prime", new PrimePayload("checking", "Подключаемся", "Это займёт немного времени.", 0, null, Array.Empty<CheckItem>(), _gameFilterEnabled, true));
             var diagnostics = BuildDiagnostics();
 
             if (diagnostics.Summary.Fail > 0)
             {
-                await PostAsync("prime", new PrimePayload("needsAttention", "Не удалось запустить FOG", "Запустите приложение из полной папки FOG Prime.", 0, null, Array.Empty<CheckItem>()));
+                await PostAsync("prime", new PrimePayload("needsAttention", "Не удалось запустить FOG", "Запустите приложение из полной папки FOG Prime.", 0, null, Array.Empty<CheckItem>(), _gameFilterEnabled));
                 return;
             }
 
-            await PostAsync("prime", new PrimePayload("starting", "Подключаемся", "Это займёт немного времени.", 0, null, Array.Empty<CheckItem>()));
+            await PostAsync("prime", new PrimePayload("starting", "Подключаемся", "Это займёт немного времени.", 0, null, Array.Empty<CheckItem>(), _gameFilterEnabled, true));
             StartMonitor();
 
             AgentResponse response;
@@ -356,11 +385,12 @@ public partial class MainWindow : Window
 
     private async Task RenderSnapshotAsync(AgentSnapshot? snapshot, DiagnosticsPayload? diagnostics)
     {
+        if (snapshot is not null) _gameFilterEnabled = snapshot.GameFilterEnabled;
         var tunnelActive = !string.IsNullOrWhiteSpace(snapshot?.ActiveTunnel);
         var view = _presentation.Present(snapshot);
         await PostAsync("vpn", new VpnPayload(tunnelActive, snapshot?.ConnectionHealthy == true));
         await PostAsync("prime", new PrimePayload(view.Status, view.Title, view.Message,
-            view.Progress, null, Array.Empty<CheckItem>()));
+            view.Progress, null, Array.Empty<CheckItem>(), _gameFilterEnabled, _gameFilterBusy));
     }
 
     private async Task CheckForUpdatesAsync(CancellationToken cancellationToken)
@@ -477,7 +507,9 @@ public sealed record PrimePayload(
     string Message,
     int Progress,
     DiagnosticsPayload? Diagnostics,
-    IReadOnlyList<CheckItem> DiscordChecks);
+    IReadOnlyList<CheckItem> DiscordChecks,
+    bool GameFilterEnabled = false,
+    bool GameFilterBusy = false);
 
 public sealed record DiagnosticsPayload(string RootDir, Summary Summary, IReadOnlyList<CheckItem> Checks);
 

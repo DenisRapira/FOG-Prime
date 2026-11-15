@@ -17,7 +17,7 @@
 
 **FOG Prime** is an open-source educational Windows application for exploring network diagnostics, automatic connection profiles, and secure local process supervision. It checks DNS, certificate-validated TLS, QUIC and endpoint availability, selects a constrained local profile, verifies the result, and keeps the native networking engine healthy without requiring a remote server or telemetry.
 
-**FOG Prime** - образовательное open-source приложение для Windows 10/11, демонстрирующее сетевую диагностику, автоматический выбор профиля и доверенную локальную архитектуру UI / Agent / Engine. Интерфейс проводит пользователя через три понятных этапа: проверка системы, настройка соединения и финальная проверка доступности.
+**FOG Prime** - образовательное open-source приложение для Windows 10/11, демонстрирующее сетевую диагностику, автоматический выбор профиля и доверенную локальную архитектуру UI / Agent / Engine. Подключение запускается автоматически, интерфейс показывает один понятный статус.
 
 > [!IMPORTANT]
 > FOG Prime is a local networking utility and reference implementation. It does not provide a hosted VPN, proxy endpoint, account, subscription, anonymity guarantee, or endpoint-security product.
@@ -36,9 +36,21 @@
 
 Сохранены существующие списки адресов: `robrun.com`, `kefirgames.com`,
 `robrun.wiki`, `robrun.site`, `robrun.org`, `epicgames.com`, `epicgames.dev`,
-`easyanticheat.net`. Рабочий движок и сетевые стратегии сохранены из v2.0.1.
+`easyanticheat.net`. Рабочий движок и правила Discord/YouTube сохранены из v2.0.1.
 Экспериментальный FOG Native в этот релиз не входит. Добавление доменов не
 гарантирует работу авторизации, голоса или игровых чатов.
+
+### Игры
+
+В интерфейсе добавлен переключатель **«Игровой фильтр»**, первая игра в списке -
+**ROB RUN**. По умолчанию фильтр выключен; выбор сохраняется между запусками.
+Переключение переподключает только FOG, не перезапускает игру.
+При включении используются дополнительные TCP/UDP-правила из 1.10.4 для портов
+1024-65535 по закреплённому IP-списку, с исключением локальных сетей и приоритетом
+Discord/YouTube. Это фильтр адресов, не процессов: он может затрагивать другие
+приложения на тех же CDN/хостинговых сетях. При здоровом внешнем VPN FOG сохраняет
+прямой режим, не вмешиваясь в туннель; выбор фильтра применяется при работе Engine.
+ROB RUN добавлен как целевая игра для проверки, не как гарантия устранения лагов.
 
 - автоматический перебор с возвратом к лучшему найденному профилю;
 - отдельный учёт ошибок голосового соединения Discord;

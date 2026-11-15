@@ -34,7 +34,7 @@ const states = {
       const focused = async id => assert.equal(await page.evaluate(() => document.activeElement.id), id);
       const shot = name => page.screenshot({ path: path.join(output, `${width}x${height}-${name}.png`), fullPage: true });
       const overflow = async label => {
-        const failures = await page.evaluate(() => [...document.querySelectorAll('h1, p, h2, button, .wordmark, .header-cell')]
+        const failures = await page.evaluate(() => [...document.querySelectorAll('h1, p, h2, button, li, #gameFilterLabel, .wordmark, .header-cell')]
           .filter(node => node.getClientRects().length)
           .filter(node => node.scrollWidth > node.clientWidth + 1 || node.getBoundingClientRect().left < 0 || node.getBoundingClientRect().right > innerWidth + 1)
           .map(node => node.id || node.className));
@@ -44,6 +44,10 @@ const states = {
       await page.goto(pathToFileURL(path.join(__dirname, '../FOG.WebView2/wwwroot/index.html')).href);
       assert.deepEqual(await page.evaluate(() => window.commands), ['ready']);
       assert.equal(await page.title(), 'FOG Prime 2.0.2');
+      const gameSwitch = page.getByRole('switch', { name: 'Игровой фильтр' });
+      assert.equal(await gameSwitch.getAttribute('aria-checked'), 'false');
+      assert.equal(await gameSwitch.isEnabled(), true);
+      assert.equal(await page.locator('#gameList').innerText(), 'ROB RUN');
       const transform = await page.locator('.signal span').first().evaluate(node => getComputedStyle(node).transform);
       await page.waitForFunction(before => getComputedStyle(document.querySelector('.signal span')).transform !== before, transform);
       await page.evaluate(() => {
@@ -70,6 +74,25 @@ const states = {
         }
         await overflow(status);
         await shot(status);
+        for (const [enabled, busy] of [[false, false], [true, false], [false, true], [true, true]]) {
+          await send('prime', { status, title: states[status][0], message: states[status][1], gameFilterEnabled: enabled, gameFilterBusy: busy });
+          assert.equal(await gameSwitch.getAttribute('aria-checked'), String(enabled));
+          assert.equal(await gameSwitch.isDisabled(), busy);
+          assert.equal(await gameSwitch.getAttribute('aria-busy'), String(busy));
+          const before = await page.evaluate(() => window.commands.length);
+          if (busy) {
+            await gameSwitch.evaluate(node => node.click());
+            assert.equal(await page.evaluate(() => window.commands.length), before);
+          } else {
+            await gameSwitch.click();
+            assert.equal(await page.evaluate(() => window.commands.length), before + 1);
+            assert.equal(await page.evaluate(() => window.commands.at(-1)), 'toggleGameFilter');
+            assert.equal(await gameSwitch.getAttribute('aria-checked'), String(enabled), 'Wait for backend confirmation');
+          }
+          await overflow(`${status} game filter ${enabled}/${busy}`);
+          if (status === 'ready') await shot(`game-filter-${enabled ? 'on' : 'off'}${busy ? '-busy' : ''}`);
+        }
+        await prime(status);
         await page.evaluate(() => {
           window.mutations = 0;
           window.observer = new MutationObserver(records => window.mutations += records.length);
@@ -82,6 +105,19 @@ const states = {
         await shot(`${status}-long`);
       }
       await prime('ready');
+      await gameSwitch.focus();
+      for (const key of ['Space', 'Enter']) {
+        const before = await page.evaluate(() => window.commands.length);
+        await page.keyboard.press(key);
+        assert.equal(await page.evaluate(() => window.commands.length), before + 1);
+        assert.equal(await page.evaluate(() => window.commands.at(-1)), 'toggleGameFilter');
+        assert.equal(await gameSwitch.getAttribute('aria-checked'), 'false');
+      }
+      await send('vpn', { active: true });
+      await focused('vpnDismiss');
+      await page.keyboard.press('Escape');
+      await focused('gameFilterSwitch');
+      await send('vpn', { active: false });
       await page.locator('#actionButton').focus();
       await send('vpn', { active: true });
       await focused('vpnDismiss');
@@ -137,7 +173,7 @@ const states = {
         await focused('actionButton');
       }
       assert.deepEqual(errors, []);
-      console.log(`PASS ${width}x${height}: 7 states, long copy, commands, announcements, dialogs/keyboard/focus, motion, overflow`);
+      console.log(`PASS ${width}x${height}: 7 states, game filter on/off/busy/keyboard/backend confirmation, long copy, commands, announcements, dialogs/focus, motion, overflow`);
       await page.close();
     }
   } finally { await browser.close(); }

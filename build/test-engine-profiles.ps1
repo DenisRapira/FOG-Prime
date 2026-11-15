@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 $runtime = (Resolve-Path -LiteralPath $RuntimeDirectory).Path
 $profiles = Get-Content -LiteralPath $ProfilesPath -Raw | ConvertFrom-Json
 foreach ($profile in $profiles) {
+  foreach ($gameFilterEnabled in @($false, $true)) {
     if ($profile.executable -ne 'FOG.Engine.exe') { throw 'Unexpected engine executable.' }
     $info = [Diagnostics.ProcessStartInfo]::new()
     $info.FileName = Join-Path $runtime 'FOG.Engine.exe'
@@ -14,7 +15,17 @@ foreach ($profile in $profiles) {
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
     $info.ArgumentList.Add('--dry-run')
-    foreach ($argument in $profile.arguments) {
+    $arguments = @($profile.arguments)
+    if (!$gameFilterEnabled) {
+        $boundary = [Array]::IndexOf($arguments, '--filter-tcp=1024-65535')
+        if ($boundary -le 0 -or $arguments[$boundary - 1] -ne '--new') { throw 'Missing game filter boundary.' }
+        $arguments = @($arguments[0..($boundary - 2)] | ForEach-Object {
+            if ($_ -like '--wf-tcp=*') { '--wf-tcp=80,443,2053,2083,2087,2096,8443' }
+            elseif ($_ -like '--wf-udp=*') { '--wf-udp=443,19294-19344,50000-50100' }
+            else { $_ }
+        })
+    }
+    foreach ($argument in $arguments) {
         $info.ArgumentList.Add($argument.Replace('${runtime}', $runtime))
     }
     $process = [Diagnostics.Process]::Start($info)
@@ -25,7 +36,8 @@ foreach ($profile in $profiles) {
             throw "Profile validation timed out: $($profile.id)"
         }
         if ($process.ExitCode -ne 0) { throw "Engine rejected profile $($profile.id): $($process.ExitCode)" }
-        Write-Host "PASS native parameters: $($profile.id)"
+        Write-Host "PASS native parameters: $($profile.id), game filter=$gameFilterEnabled"
     }
     finally { $process.Dispose() }
+  }
 }

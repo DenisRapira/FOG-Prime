@@ -57,6 +57,18 @@ try {
         Copy-Item -LiteralPath $sourcePayload -Destination (Join-Path $output "runtime/$($entry.Name)") -Force
     }
     Copy-Item -LiteralPath (Join-Path $payloadDirectory 'manifest.json') -Destination (Join-Path $output 'payload-provenance.json')
+    $gameDirectory = Join-Path $root 'FOG.Engine/payloads/flowseal-1.10.4'
+    & (Join-Path $PSScriptRoot 'verify-game-assets.ps1') -AssetDirectory $gameDirectory
+    $gameManifest = Get-Content -LiteralPath (Join-Path $gameDirectory 'manifest.json') -Raw | ConvertFrom-Json
+    foreach ($entry in $gameManifest.sha256.PSObject.Properties) {
+        if ($entry.Name -notmatch '^[A-Za-z0-9_-]+\.(bin|txt)$') { throw 'Invalid game filter asset filename.' }
+        $sourceAsset = Join-Path $gameDirectory $entry.Name
+        if ((Get-FileHash -LiteralPath $sourceAsset -Algorithm SHA256).Hash -ine $entry.Value) { throw "Game filter asset integrity check failed: $($entry.Name)" }
+        $targetAsset = Join-Path $output "runtime/$($entry.Name)"
+        Copy-Item -LiteralPath $sourceAsset -Destination $targetAsset
+        if ((Get-FileHash -LiteralPath $targetAsset -Algorithm SHA256).Hash -ine $entry.Value) { throw 'Game filter asset changed during copying.' }
+    }
+    Copy-Item -LiteralPath (Join-Path $gameDirectory 'manifest.json') -Destination (Join-Path $output 'game-filter-provenance.json')
     if ($CertificateThumbprint) {
         $signatures['runtime/FOG.Engine.exe'] = & (Join-Path $PSScriptRoot 'sign-application.ps1') `
             -FilePath (Join-Path $output 'runtime/FOG.Engine.exe') -CertificateThumbprint $CertificateThumbprint `

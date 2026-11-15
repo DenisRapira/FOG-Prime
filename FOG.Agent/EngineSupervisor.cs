@@ -20,6 +20,9 @@ public sealed class EngineSupervisor(
     ILogger<EngineSupervisor> logger)
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly GameFilterSettings _gameFilterSettings = new(Path.Combine(options.Value.ResolveDataDirectory(), "game-filter.json"));
+    private bool? _gameFilterEnabled;
+    private bool GameFilterEnabled => _gameFilterEnabled ??= _gameFilterSettings.Load();
     private readonly HealthRefreshSignal _healthRefresh = new();
     private readonly ProfileSearch _profileSearch = new();
     private DateTimeOffset _qualificationStartedAt;
@@ -55,6 +58,25 @@ public sealed class EngineSupervisor(
 
     internal Task WaitForHealthRefreshAsync(TimeSpan interval, CancellationToken cancellationToken) =>
         _healthRefresh.WaitAsync(interval, cancellationToken);
+
+    public async Task<AgentSnapshot> SetGameFilterAsync(bool enabled, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (GameFilterEnabled == enabled) return CreateSnapshot(CurrentState);
+            if (_desiredRunning && !_directMode) await StopInternalAsync(cancellationToken);
+            _gameFilterSettings.Save(enabled);
+            _gameFilterEnabled = enabled;
+            logger.LogInformation("Game filter changed: enabled={Enabled}", enabled);
+            if (!_desiredRunning || _directMode) return CreateSnapshot(CurrentState);
+            ResetStartupCycle();
+            _lastProbes = Array.Empty<ProbeResult>();
+            driverBackoff.Reset();
+            return await StartBestInternalAsync(cancellationToken);
+        }
+        finally { _gate.Release(); }
+    }
 
     public async Task<AgentSnapshot> StartBestAsync(CancellationToken cancellationToken)
     {
@@ -443,7 +465,7 @@ public sealed class EngineSupervisor(
                 logger.LogWarning("No complete profile found; restoring best observed profile {ProfileId}", best);
                 await StopInternalAsync(cancellationToken);
                 await integrityVerifier.VerifyAsync(cancellationToken);
-                StartProfile(catalog.All.Single(p => p.Id.Equals(best, StringComparison.OrdinalIgnoreCase)));
+                await StartProfileAsync(catalog.All.Single(p => p.Id.Equals(best, StringComparison.OrdinalIgnoreCase)), cancellationToken);
                 _lastProbes = Array.Empty<ProbeResult>();
             }
             logger.LogWarning("Profile search exhausted; retaining best available profile");
@@ -535,7 +557,7 @@ public sealed class EngineSupervisor(
                 return tunnelSnapshot;
             }
 
-            StartProfile(profile);
+            await StartProfileAsync(profile, cancellationToken);
             await Task.Delay(TransportPolicy.EngineLaunchSettleDelay, cancellationToken);
             if (await DeferToActiveTunnelAsync(cancellationToken) is { } activatedTunnelSnapshot)
             {
@@ -723,8 +745,9 @@ public sealed class EngineSupervisor(
                 $"{probe.Name}={(probe.Ok ? "ok" : "fail")}({probe.LatencyMs}ms; {probe.Detail})")));
     }
 
-    private void StartProfile(EngineProfile profile)
+    private async Task StartProfileAsync(EngineProfile profile, CancellationToken cancellationToken)
     {
+        profile = GameFilterPolicy.Apply(profile, GameFilterEnabled);
         var runtimeDirectory = options.Value.ResolveFromBase(options.Value.RuntimeDirectory);
         var executable = Path.GetFullPath(Path.Combine(runtimeDirectory, profile.Executable));
         var relative = Path.GetRelativePath(runtimeDirectory, executable);
@@ -752,14 +775,22 @@ public sealed class EngineSupervisor(
             profile.Arguments.Count,
             executable);
 
-        var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Engine process could not be created.");
+        var assets = GameFilterEnabled ? GameFilterAssetLease.Acquire(runtimeDirectory) : null;
+        Process process;
+        try
+        {
+            // Verify while write/delete locks are held, before native IP-set loading.
+            if (assets is not null) await integrityVerifier.VerifyAsync(cancellationToken);
+            process = Process.Start(startInfo) ?? throw new InvalidOperationException("Engine process could not be created.");
+        }
+        catch { assets?.Dispose(); throw; }
         healthChecker.BeginProfileObservation();
         var instance = new EngineInstance(
             process,
             profile.Id,
-            new DateTimeOffset(process.StartTime.ToUniversalTime()));
+            new DateTimeOffset(process.StartTime.ToUniversalTime())) { GameAssets = assets };
         AttachEngine(instance, profile);
-        sessionLeaseStore.Save(process, profile.Id, executable);
+        sessionLeaseStore.Save(process, profile.Id, executable, GameFilterEnabled);
         logger.LogInformation(
             "FOG Engine started; pid={ProcessId}; profile={ProfileId}",
             process.Id,
@@ -781,6 +812,8 @@ public sealed class EngineSupervisor(
             ? null
             : Path.GetFullPath(Path.Combine(runtimeDirectory, profile.Executable));
         if (profile is null ||
+            lease.GameFilterEnabled != GameFilterEnabled ||
+            GameFilterEnabled ||
             expectedPath is null ||
             !expectedPath.Equals(Path.GetFullPath(lease.ExecutablePath), StringComparison.OrdinalIgnoreCase))
         {
@@ -831,6 +864,7 @@ public sealed class EngineSupervisor(
         process.EnableRaisingEvents = true;
         process.Exited += (_, _) =>
         {
+            instance.GameAssets?.Dispose();
             sessionLeaseStore.Clear(process.Id);
             var code = TryGetExitCode(process);
             var uptime = DateTimeOffset.UtcNow - instance.StartedAt;
@@ -892,11 +926,9 @@ public sealed class EngineSupervisor(
             sessionLeaseStore.Clear(instance.Process.Id);
         }
 
-        _engine = null;
-        _activeProfile = null;
-
         if (instance is null)
         {
+            _activeProfile = null;
             return;
         }
 
@@ -905,8 +937,8 @@ public sealed class EngineSupervisor(
             if (!instance.Process.HasExited)
             {
                 instance.Process.Kill(entireProcessTree: true);
-                await instance.Process.WaitForExitAsync(cancellationToken)
-                    .WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+                await instance.Process.WaitForExitAsync(CancellationToken.None)
+                    .WaitAsync(TimeSpan.FromSeconds(5));
             }
         }
         catch (InvalidOperationException)
@@ -915,8 +947,19 @@ public sealed class EngineSupervisor(
         }
         finally
         {
-            instance.Process.Dispose();
-            await winDivertService.StopOwnedAsync(CancellationToken.None);
+            if (instance.Process.HasExited)
+            {
+                _engine = null;
+                _activeProfile = null;
+                instance.GameAssets?.Dispose();
+                instance.Process.Dispose();
+                await winDivertService.StopOwnedAsync(CancellationToken.None);
+            }
+            else
+            {
+                logger.LogWarning("Engine termination was not confirmed; retaining process ownership and asset locks");
+                throw new IOException("Engine termination was not confirmed.");
+            }
         }
     }
 
@@ -1033,7 +1076,7 @@ public sealed class EngineSupervisor(
     {
         var profiles = System.Text.Json.JsonSerializer.Serialize(catalog.All);
         var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(profiles)));
-        return tunnelDetector.GetNetworkIdentity() + ":" + digest;
+        return tunnelDetector.GetNetworkIdentity() + ":" + digest + ":game=" + GameFilterEnabled;
     }
 
     private AgentSnapshot CreateSnapshot(string state)
@@ -1051,7 +1094,8 @@ public sealed class EngineSupervisor(
             _lastProbes,
             _compatibility,
             _directMode ? "direct" : _waitingForTunnel ? "tunnel-wait" : IsRunning ? "engine" : "stopped",
-            _activeTunnel);
+            _activeTunnel,
+            GameFilterEnabled);
         Volatile.Write(ref _latestSnapshot, snapshot);
         return snapshot;
     }
@@ -1106,5 +1150,6 @@ public sealed class EngineSupervisor(
         public DateTimeOffset StartedAt { get; } = startedAt;
         public volatile bool StopRequested;
         public int DriverConflictRecorded;
+        public GameFilterAssetLease? GameAssets;
     }
 }

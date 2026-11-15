@@ -29,8 +29,11 @@ if (($ids | Select-Object -Unique).Count -ne $ids.Count) { throw "Profile IDs mu
 foreach ($profile in $profiles) {
     if ($profile.executable -ne "FOG.Engine.exe") { throw "Profile $($profile.id) uses an untrusted executable." }
     if (-not $profile.arguments -or @($profile.arguments).Count -eq 0) { throw "Profile $($profile.id) has no arguments." }
-    if (-not (@($profile.arguments) -contains "--wf-udp=443,19294-19344,50000-50100")) {
-        throw "Profile $($profile.id) does not use the validated Discord voice UDP range."
+    if (@($profile.arguments | Where-Object { $_ -like '--wf-udp=*' }).Count -ne 1 -or
+        -not (@($profile.arguments) -contains '--wf-udp=443,1024-65535') -or
+        @($profile.arguments | Where-Object { $_ -like '--wf-tcp=*' }).Count -ne 1 -or
+        -not (@($profile.arguments) -contains '--wf-tcp=80,443,1024-65535')) {
+        throw "Profile $($profile.id) must cover service and game ports with one capture filter per protocol."
     }
     if (-not (@($profile.arguments) -contains "--filter-udp=19294-19344,50000-50100")) {
         throw "Profile $($profile.id) does not filter the validated Discord voice UDP range."
@@ -70,6 +73,8 @@ foreach ($profile in $profiles) {
 }
 
 $pipeServerSource = Get-Content (Join-Path $root "FOG.Agent\AgentPipeServer.cs") -Raw
+& (Join-Path $PSScriptRoot 'verify-game-assets.ps1') -AssetDirectory (Join-Path $root 'FOG.Engine/payloads/flowseal-1.10.4')
+& (Join-Path $PSScriptRoot 'test-game-filter.ps1')
 $supervisorSource = Get-Content (Join-Path $root "FOG.Agent\EngineSupervisor.cs") -Raw
 $healthSource = Get-Content (Join-Path $root "FOG.Agent\ConnectionHealthChecker.cs") -Raw
 $transportPolicySource = Get-Content (Join-Path $root "FOG.Agent\TransportPolicy.cs") -Raw
@@ -207,6 +212,11 @@ if ($PackageDirectory) {
         "runtime\WinDivert.dll",
         "runtime\WinDivert64.sys",
         "runtime\voice_decoy_quic.bin",
+        "runtime\ACTIVE_GAME_UDP.bin",
+        "runtime\tls_clienthello_www_sferum_ru.bin",
+        "runtime\game-ipset.txt",
+        "runtime\game-exclude.txt",
+        "game-filter-provenance.json",
         "THIRD_PARTY_NOTICES.md",
         "UPSTREAM.md"
     )

@@ -4,6 +4,13 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [2.0.2] - 2026-11-15
 
+- Add an opt-in Game Filter switch with ROB RUN as the first listed game.
+  Persist the choice, restart only FOG's connection on changes, and restore
+  the exact previous service rules and narrow capture when disabled.
+- Pin 1.10.4 game rules, two packet samples, destination IP set and local-network
+  exclusions. Reject empty/unbounded lists; preserve service-rule priority,
+  enforce n4 processing cutoff and verify packaged game assets against hashes.
+
 - Simplify the automatic connection interface to a single status and one action;
   hide engineering diagnostics and profile-search details from the normal view.
 - Keep transient failures in a bounded recovery state, offer retry after a

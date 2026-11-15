@@ -166,6 +166,13 @@ try {
         Write-Host 'PASS: modified voice packet payload rejected'
     }
 
+    foreach ($name in @('game-ipset.txt', 'ACTIVE_GAME_UDP.bin')) {
+        $gameTamper = New-TestPackage ("game-tamper-" + $name)
+        Add-Content -LiteralPath (Join-Path $gameTamper "runtime/$name") -Value 'tamper'
+        Assert-AgentRejectsStartup $gameTamper "Modified game asset $name"
+        Write-Host "PASS: modified game asset $name rejected"
+    }
+
     $agentTamper = New-TestPackage "agent-tamper"
     Add-Content -LiteralPath (Join-Path $agentTamper "FOG.Agent.exe") -Value "tamper"
     $ui = Start-Process -FilePath (Join-Path $agentTamper "FOG Prime.exe") -WorkingDirectory $agentTamper -WindowStyle Hidden -PassThru

@@ -251,6 +251,8 @@ internal sealed class AgentClient
 
     internal static TimeSpan GetResponseTimeout(string command) =>
         command.Equals("start", StringComparison.OrdinalIgnoreCase) ||
+        command.Equals("game-filter-on", StringComparison.OrdinalIgnoreCase) ||
+        command.Equals("game-filter-off", StringComparison.OrdinalIgnoreCase) ||
         command.Equals("recheck", StringComparison.OrdinalIgnoreCase)
             ? TimeSpan.FromSeconds(90)
             : command.Equals("stop", StringComparison.OrdinalIgnoreCase) ||

@@ -11,8 +11,19 @@ their upstream filenames. Their provenance and SHA-256 digests are recorded in
 Source: https://github.com/Flowseal/zapret-discord-youtube/tree/1.10.2/bin
 The upstream repository does not provide a root LICENSE file at this tag;
 this attribution does not assert a separate license grant from Flowseal.
-No Flowseal batch scripts, updater, executable, broad IP sets or hosts file
-are executed or installed by this integration.
+No Flowseal batch scripts, updater, executable or hosts file are executed or
+installed by this integration.
+
+The background Game Filter adapts the final TCP/UDP rules of release 1.10.4
+(`general (ALT11).bat`), commit `176f56dc3f11ce5915c26abcdde903f93d835b64`.
+Two packet samples and the upstream service IP set/local exclusions are pinned
+in `payloads/flowseal-1.10.4/manifest.json`, distributed as
+`game-filter-provenance.json`. The include list originates from
+`.service/ipset-service.txt`, not the placeholder `lists/ipset-all.txt`.
+This list includes broad CDN/hosting networks; filtering is destination-based,
+not game-process-based. Empty lists and default routes are rejected at build time.
+Source: https://github.com/Flowseal/zapret-discord-youtube/tree/1.10.4
+The attribution above does not assert a separate license grant for these assets.
 
 ## zapret
 

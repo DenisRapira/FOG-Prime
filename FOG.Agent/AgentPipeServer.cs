@@ -215,6 +215,8 @@ public sealed class AgentPipeServer(
                 "status" => Success("ready", "Status updated.", request, await supervisor.GetSnapshotAsync(cancellationToken)),
                 "start" => Success("ready", "Automatic connection completed.", request, await supervisor.StartBestAsync(cancellationToken)),
                 "stop" => Success("stopped", "Engine stopped.", request, await supervisor.StopAsync(cancellationToken)),
+                "game-filter-on" => Success("ready", "Game filter enabled.", request, await supervisor.SetGameFilterAsync(true, cancellationToken)),
+                "game-filter-off" => Success("ready", "Game filter disabled.", request, await supervisor.SetGameFilterAsync(false, cancellationToken)),
                 "shutdown" => Success("stopped", "Agent stopped.", request, await supervisor.StopAsync(cancellationToken)),
                 "recheck" => Success("ready", "Connection checked.", request, await supervisor.RefreshHealthAsync(cancellationToken)),
                 _ => new AgentResponse(false, "invalid", "Unsupported command.", request.CorrelationId)
