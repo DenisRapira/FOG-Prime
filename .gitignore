@@ -12,5 +12,12 @@ TestResults/
 *.tmp
 *.pfx
 *.snk
+.env
+.env.*
+!.env.example
+*.p12
+*.key
+*.pem
+secrets.local.*
 **/node_modules/
 .DS_Store

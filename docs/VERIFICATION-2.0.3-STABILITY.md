@@ -2,7 +2,7 @@
 
 Date: 2026-11-27. Version: 2.0.3, unpublished.
 Source base: c8f23bf7b018133d43cf5e576033c5c2d27749ef, modified working tree.
-Package: `E:/Fogprime/FOG-Prime-2.0.3-stability-candidate`.
+Package: local `FOG-Prime-2.0.3-stability-candidate` directory.
 SDK: 10.0.404. Self-contained win-x64, bundle compression disabled.
 
 Launcher SHA-256:

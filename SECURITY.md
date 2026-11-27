@@ -14,6 +14,15 @@ Include the affected version, reproduction steps, impact, and any suggested miti
 
 ## Trust model
 
+- CI scans the fetched Git history for credentials with a checksum-pinned
+  Gitleaks version. Findings are redacted; only three exact, reviewed public
+  examples are allowlisted. This is a detection aid, not proof that no secret
+  or personal information can ever be present. Never commit local environment
+  files, certificate private keys, tokens or unredacted diagnostic reports.
+- If a real credential has been published, revoke or rotate it first. Removing
+  a file or rewriting Git history does not invalidate leaked credentials or
+  remove copies in existing clones, forks, caches or release assets.
+
 - Install releases only from this repository's Releases page.
 - Compare the downloaded archive with its release `.sha256` asset when available.
   As verified on 2026-11-27, v2.0.2 has no separate checksum asset; do not

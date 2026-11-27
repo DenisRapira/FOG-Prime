@@ -1,0 +1,26 @@
+title = "FOG Prime public-source secret checks"
+
+[extend]
+useDefault = true
+
+# Exact, reviewed public examples; never exclude an entire vendor directory.
+[[allowlists]]
+description = "SHA-256 payload digest, not a Discord credential"
+condition = "AND"
+paths = ['''^FOG\.Engine/payloads/flowseal-1\.10\.2/manifest\.json$''']
+regexTarget = "match"
+regexes = ['''ACTIVE_DISCORD_UDP\.bin": "2FE18B3BD20807D36704D0B072092EE49AE84EDCA907A4420AB9A0F0F28FDDCF"''']
+
+[[allowlists]]
+description = "Network-security prose, not an API credential"
+condition = "AND"
+paths = ['''^docs/NETWORK-SECURITY-2\.0\.3\.md$''']
+regexTarget = "match"
+regexes = ['''token, PID/correlation ''']
+
+[[allowlists]]
+description = "Public upstream WireGuard tutorial example, never used by FOG"
+condition = "AND"
+paths = ['''^FOG\.Engine/upstream/docs/wireguard_iproute_openwrt\.txt$''']
+regexTarget = "match"
+regexes = ['''PrivateKey = OKXX0TSlyjJmGt3/yHlHxi0AqjJ0vh\+Msne3qEHk0VM=''']
