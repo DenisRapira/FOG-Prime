@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-11-27",
+  "repository": "https://github.com/DenisRapira/FOG-Prime",
+  "stable": {
+    "version": "2.0.2",
+    "url": "https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.2",
+    "framework": ".NET 8",
+    "publishedAt": "2026-11-15T11:47:08Z",
+    "checksumAssetPublished": false
+  },
+  "candidate": {
+    "version": "2.0.3",
+    "framework": ".NET 10",
+    "status": "unreleased"
+  }
+}

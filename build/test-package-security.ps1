@@ -5,8 +5,27 @@ param(
 
 $ErrorActionPreference = "Stop"
 $package = (Resolve-Path $PackageDirectory).Path
+& (Join-Path $PSScriptRoot 'test-package-layout.ps1') -PackageDirectory $package
 $tempRoot = Join-Path $env:TEMP ("fog-prime-security-" + [guid]::NewGuid().ToString("N"))
 $pipeName = "fog-prime-session-" + [guid]::NewGuid().ToString("N")
+
+foreach ($relative in @('LICENSE', 'THIRD_PARTY_NOTICES.md', 'notices/ENGINE-NOTICES.md', 'notices/UPSTREAM.md',
+    'notices/Engine-MIT-LICENSE.txt', 'notices/WinDivert-LICENSE.txt', 'notices/Cygwin-NOTICE.txt',
+    'notices/DotNet-LICENSE.txt', 'notices/DotNet-ThirdPartyNotices.txt', 'notices/WebView2-LICENSE.txt', 'notices/WebView2-NOTICE.txt')) {
+    $notice = Get-Item -LiteralPath (Join-Path $package $relative) -ErrorAction Stop
+    if ($notice.PSIsContainer -or $notice.Length -eq 0) { throw "Missing or empty package notice: $relative" }
+}
+Write-Host 'PASS: package contains application and dependency license notices'
+$engineNotice = Get-Content -LiteralPath (Join-Path $package 'notices/ENGINE-NOTICES.md') -Raw
+$cygwinNotice = Get-Content -LiteralPath (Join-Path $package 'notices/Cygwin-NOTICE.txt') -Raw
+if (!$engineNotice.Contains('Copyright (c) 2024-2026 Flowseal') -or
+    !$engineNotice.Contains('Permission is hereby granted, free of charge') -or
+    !$cygwinNotice.Contains('--- CYGWIN_LICENSE ---') -or
+    !$cygwinNotice.Contains('--- COPYING.NEWLIB ---') -or
+    !$cygwinNotice.Contains('cygwin-3.4.10-1-src.tar.xz')) {
+    throw 'Matching dependency notices or version-specific source access are incomplete.'
+}
+Write-Host 'PASS: complete Flowseal MIT and matching Cygwin/newlib source/license notices retained'
 
 function New-SessionToken {
     $bytes = New-Object byte[] 32
@@ -46,8 +65,8 @@ function New-TestPackage([string]$name) {
 
 function Start-TestAgent([string]$path, [string]$token) {
     $info = [Diagnostics.ProcessStartInfo]::new()
-    $info.FileName = Join-Path $path "FOG.Agent.exe"
-    $info.WorkingDirectory = $path
+    $info.FileName = Join-Path $path "app/FOG.Agent.exe"
+    $info.WorkingDirectory = Join-Path $path 'app'
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
     $info.Environment["FOG_PRIME_SESSION_TOKEN"] = $token
@@ -129,6 +148,17 @@ try {
             throw "Unauthenticated shutdown was not rejected."
         }
 
+        foreach ($relative in @('app/runtime/FOG.Engine.exe', 'app/runtime/WinDivert.dll', 'app/runtime.manifest.json')) {
+            $stream = $null
+            try {
+                $stream = [IO.File]::Open((Join-Path $baseline $relative), [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+                throw "Running Agent did not pin $relative."
+            }
+            catch [IO.IOException] { }
+            finally { if ($stream) { $stream.Dispose() } }
+        }
+        Write-Host 'PASS: running Agent pins executable, DLL and manifest without loading driver'
+
         $shutdown = Send-AgentRequest "shutdown" $token
         if (-not $shutdown.ok -or -not $agent.WaitForExit(8000)) {
             throw "Authenticated Agent shutdown failed."
@@ -145,39 +175,40 @@ try {
     }
 
     $profilesTamper = New-TestPackage "profiles-tamper"
-    Add-Content -LiteralPath (Join-Path $profilesTamper "profiles.json") -Value " "
+    Add-Content -LiteralPath (Join-Path $profilesTamper "app/profiles.json") -Value " "
     Assert-AgentRejectsStartup $profilesTamper "Modified profiles.json"
     Write-Host "PASS: modified profiles.json rejected"
 
     $manifestTamper = New-TestPackage "manifest-tamper"
-    Add-Content -LiteralPath (Join-Path $manifestTamper "runtime.manifest.json") -Value " "
+    Add-Content -LiteralPath (Join-Path $manifestTamper "app/runtime.manifest.json") -Value " "
     Assert-AgentRejectsStartup $manifestTamper "Modified runtime.manifest.json"
     Write-Host "PASS: modified runtime.manifest.json rejected"
 
     $runtimeTamper = New-TestPackage "runtime-tamper"
-    Add-Content -LiteralPath (Join-Path $runtimeTamper "runtime\WinDivert.dll") -Value "tamper"
+    Add-Content -LiteralPath (Join-Path $runtimeTamper "app/runtime/WinDivert.dll") -Value "tamper"
     Assert-AgentRejectsStartup $runtimeTamper "Modified runtime file"
     Write-Host "PASS: modified runtime file rejected"
 
-    if (Test-Path -LiteralPath (Join-Path $package 'runtime/ACTIVE_DISCORD_UDP.bin')) {
+    if (Test-Path -LiteralPath (Join-Path $package 'app/runtime/ACTIVE_DISCORD_UDP.bin')) {
         $payloadTamper = New-TestPackage 'payload-tamper'
-        Add-Content -LiteralPath (Join-Path $payloadTamper 'runtime/ACTIVE_DISCORD_UDP.bin') -Value 'tamper'
+        Add-Content -LiteralPath (Join-Path $payloadTamper 'app/runtime/ACTIVE_DISCORD_UDP.bin') -Value 'tamper'
         Assert-AgentRejectsStartup $payloadTamper 'Modified voice packet payload'
         Write-Host 'PASS: modified voice packet payload rejected'
     }
 
     foreach ($name in @('game-ipset.txt', 'ACTIVE_GAME_UDP.bin')) {
         $gameTamper = New-TestPackage ("game-tamper-" + $name)
-        Add-Content -LiteralPath (Join-Path $gameTamper "runtime/$name") -Value 'tamper'
+        Add-Content -LiteralPath (Join-Path $gameTamper "app/runtime/$name") -Value 'tamper'
         Assert-AgentRejectsStartup $gameTamper "Modified game asset $name"
         Write-Host "PASS: modified game asset $name rejected"
     }
 
     $agentTamper = New-TestPackage "agent-tamper"
-    Add-Content -LiteralPath (Join-Path $agentTamper "FOG.Agent.exe") -Value "tamper"
+    Add-Content -LiteralPath (Join-Path $agentTamper "app/FOG.Agent.exe") -Value "tamper"
     $ui = Start-Process -FilePath (Join-Path $agentTamper "FOG Prime.exe") -WorkingDirectory $agentTamper -WindowStyle Hidden -PassThru
     try {
         Start-Sleep -Seconds 4
+        if ($ui.HasExited) { throw 'UI exited during the modified-Agent test; rejection cannot be inferred from a crash or premature exit.' }
         $unexpected = @(Get-Process -Name "FOG.Agent", "FOG.Engine" -ErrorAction SilentlyContinue | Where-Object {
             try { $_.MainModule.FileName.StartsWith($agentTamper, [StringComparison]::OrdinalIgnoreCase) } catch { $false }
         })

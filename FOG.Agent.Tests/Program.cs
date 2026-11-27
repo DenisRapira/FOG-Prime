@@ -42,6 +42,25 @@ if (args is ["--check-update", var currentVersion])
 
 var tests = new (string Name, Action Run)[]
 {
+    ("restores browser immediately while suspension is pending", BrowserSleepTests.RestoreDuringSuspend),
+    ("coalesces browser sleep and preserves final window state", BrowserSleepTests.CoalescesAndResuspends),
+    ("does not touch disposed browsers and recovers from optional sleep failures", BrowserSleepTests.DisposalAndFailure),
+    ("resolves the private backend layout including paths with spaces", PackagePathTests.ResolvesPrivateBackend),
+    ("serializes queued Start then Stop intent", AuditRegressionTests.StartThenStopHonorsGateOrder),
+    ("serializes queued Stop then Start intent", AuditRegressionTests.StopThenStartHonorsGateOrder),
+    ("leaves running intent unchanged for cancelled gate waiters", AuditRegressionTests.CancelledIntentsDoNotChangeDesiredState),
+    ("rejects stale topology across all direct and tunnel probe paths", AuditRegressionTests.TunnelPathsRejectStaleProbes),
+    ("rejects stale topology across established and qualifying Engine probes", AuditRegressionTests.EnginePathsRejectStaleProbes),
+    ("accepts unchanged topology across all probe kinds", AuditRegressionTests.UnchangedTopologyAcceptsResults),
+    ("invalidates cached success and accepts fresh probes after a network event", AuditRegressionTests.NotificationInvalidatesCachedSuccess),
+    ("does not publish cancelled in-flight probe results", AuditRegressionTests.CancelledProbeDoesNotPublishResults),
+    ("cancels obsolete probe I/O and releases the supervisor gate", AuditRegressionTests.TopologyCancellationReleasesGate),
+    ("delivers topology cancellation to every probe kind", AuditRegressionTests.TopologyCancellationCoversProbeKinds),
+    ("preserves caller cancellation identity during topology changes", AuditRegressionTests.CallerCancellationRemainsCallerCancellation),
+    ("coalesces network cancellation bursts without poisoning fresh probes", AuditRegressionTests.BurstCancellationAllowsFreshProbe),
+    ("contains slow and faulty cancellation callbacks without starving commands", AuditRegressionTests.CancellationCallbackFaultsAreContained),
+    ("releases completed probe sources and caller registrations", AuditRegressionTests.CompletedProbeReleasesCancellationOwnership),
+    ("safely races probe completion against network notification", AuditRegressionTests.CompletionNotificationRaceIsSafe),
     ("simple connection view hides transient failures without inventing readiness", ConnectionPresentationTests.GraceAndReadiness),
     ("simple connection view bounds recovery and resets on retry", ConnectionPresentationTests.RecoveryAndReset),
     ("simple connection view distinguishes confirmed VPN and missing transport", ConnectionPresentationTests.HonestVpnAndStoppedState),
@@ -58,8 +77,23 @@ var tests = new (string Name, Action Run)[]
     ("wakes startup health checks without periodic timer delay", AssertHealthRefreshSignal),
     ("prioritizes scoped FOG bootstrap strategy", AssertBootstrapStrategy),
     ("bounds game filtering after service-specific rules", AssertGameFilter),
+    ("loads multiple catalog games with unique IDs", GameCatalogTests.CatalogContainsBothGamesWithUniqueIds),
+    ("rejects unsafe and out-of-bounds game catalogs", GameCatalogTests.ParserRejectsUnsafeCatalogs),
+    ("extends only game hostlists across all four profiles", GameCatalogTests.EnabledPolicyExtendsOnlyExistingGameHostlistsInAllProfiles),
+    ("preserves disabled 2.0.2 narrow service rules", GameCatalogTests.DisabledPolicyPreservesNarrow20202ServiceRules),
+    ("adds missing game domains once without changing Google or voice", GameCatalogTests.MissingDomainsAreAddedOnceWithoutTouchingGoogleOrVoice),
     ("persists game filter choice and defaults safely", AssertGameFilterSettings),
     ("locks game assets against live mutation", AssertGameAssetLocks),
+    ("pins verified runtime files, manifest and ancestor directories", VerifiedRuntimeLeaseTests.PinsFilesManifestAndAncestorDirectories),
+    ("releases verified runtime locks on idempotent disposal", VerifiedRuntimeLeaseTests.DisposalIsIdempotentAndReleasesAllLocks),
+    ("rejects mismatched and oversized runtime manifests without leaks", VerifiedRuntimeLeaseTests.RejectsManifestMismatchAndInvalidSizes),
+    ("rejects missing runtime files and content hash mismatches", VerifiedRuntimeLeaseTests.RejectsMissingFilesAndWrongContentHashes),
+    ("rejects unsafe runtime names, hashes and entry counts", VerifiedRuntimeLeaseTests.RejectsUnsafeNamesHashesAndEntryCounts),
+    ("accepts runtime manifest size and entry count boundaries", VerifiedRuntimeLeaseTests.AcceptsEntryCountAndManifestSizeBoundaries),
+    ("releases verified runtime handles after cancellation", VerifiedRuntimeLeaseTests.CancellationReleasesAcquiredHandles),
+    ("rejects existing writable runtime handles without leaks", VerifiedRuntimeLeaseTests.RejectsExistingWriteSharedHandlesWithoutLeaks),
+    ("rejects fixture-local runtime reparse points", VerifiedRuntimeLeaseTests.RejectsFixtureLocalReparsePoints),
+    ("rejects FileReadLease reads after disposal", VerifiedRuntimeLeaseTests.FileReadLeaseRejectsOpenReadAfterDisposal),
     ("applies game filter choice without disrupting direct VPN mode", AssertGameFilterTransition),
     ("rejects a mismatched named pipe server", AssertPipeServerIdentity),
     ("terminates children after owner crash", AssertCrashCleanup),
@@ -92,11 +126,25 @@ var tests = new (string Name, Action Run)[]
     ("restarts an unresponsive Agent after bounded retries", AssertAgentRestartPolicy),
     ("detects newer GitHub release versions", AssertReleaseVersionComparison),
     ("rejects untrusted release links", AssertReleaseLinkValidation),
+    ("bounds update response bodies and honors cancellation and deadlines", UpdateCheckerSecurityTests.BoundsAndCancellation),
+    ("validates update release fields and trusted URL authority", UpdateCheckerSecurityTests.ReleaseValidation),
     ("keeps a running profile during degraded probes", AssertDegradedProbePolicy),
     ("qualifies startup profiles in the background", AssertBackgroundQualificationPolicy),
     ("keeps a profile stable through a long session", AssertLongSessionStability),
     ("authenticates a recovered Engine session", AssertEngineSessionLease),
     ("persists the last working profile", AssertPreferredProfilePersistence),
+    ("caches network snapshots with bounded refresh and invalidation", OptimizationTests.SnapshotCaching),
+    ("bounds background scheduling and state persistence", OptimizationTests.SchedulingAndPersistence),
+    ("coalesces network notifications and honors cancellation", OptimizationTests.NetworkNotificationsCoalesce),
+    ("keeps stopped recovery free of probes and automatic starts", OptimizationTests.StoppedRecoveryDoesNotProbeOrAutostart),
+    ("preserves the live Engine across network context changes", OptimizationTests.NetworkChangesPreserveLiveEngine),
+    ("remembers profiles across A-B-A network roaming", ProfileMemoryTests.RoamingPreservesEachNetworkAndDefault),
+    ("invalidates only the failed network preference", ProfileMemoryTests.FailedContextInvalidationIsIsolated),
+    ("bounds profile history count and serialized bytes", ProfileMemoryTests.EvictsOldestAndBoundsSerializedBytes),
+    ("expires old network preferences without losing fresh contexts", ProfileMemoryTests.ExpiryAndClockValidationPreserveOtherContexts),
+    ("migrates valid version two profile memory", ProfileMemoryTests.MigratesValidVersionTwoWithoutContextLoss),
+    ("rejects corrupt or unsafe profile memory", ProfileMemoryTests.RejectsCorruptionAndInvalidInputSafely),
+    ("cleans unique profile memory temporary files after failed replacement", ProfileMemoryTests.FailedAtomicReplaceCleansOnlyItsOwnTemporaryFile),
     ("bounds the fast startup probe", AssertFastStartupProbe),
     ("rotates failed connection profiles", AssertProfileRotation),
     ("applies bounded driver backoff", AssertDriverBackoff),
@@ -367,7 +415,9 @@ static void AssertGameFilter()
             "Disabled filter changed service rules");
         Assert(normal.Arguments.Any(value => value.Contains("robrun.com,kefirgames.com,robrun.wiki,robrun.site,robrun.org")),
             "ROB RUN service addresses missing");
-        Assert(ReferenceEquals(GameFilterPolicy.Apply(profile, true), profile), "Enabled filter rewrote trusted rules");
+        var enabled = GameFilterPolicy.Apply(profile, true);
+        Assert(enabled.Id == profile.Id && enabled.Priority == profile.Priority,
+            "Enabled filter changed profile identity or priority");
     }
 }
 
@@ -1008,7 +1058,7 @@ static void AssertPreferredProfilePersistence()
         Assert(store.TryLoad("network-a:profiles-v3") is null, "Changed strategies reused stale preference");
         store.Save("fog-voice-prime");
         var expired = JsonNode.Parse(File.ReadAllText(path))!;
-        expired["verifiedAt"] = DateTimeOffset.UtcNow.AddDays(-8);
+        expired["entries"]!.AsArray().Single(entry => entry!["context"] is null)!["verifiedAt"] = DateTimeOffset.UtcNow.AddDays(-8);
         File.WriteAllText(path, expired.ToJsonString());
         Assert(store.TryLoad() is null, "Expired preference was reused");
         store.Clear();

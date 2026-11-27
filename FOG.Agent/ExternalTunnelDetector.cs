@@ -17,7 +17,13 @@ public interface INetworkAdapterSource
 
 public sealed class SystemNetworkAdapterSource : INetworkAdapterSource
 {
-    public IReadOnlyCollection<NetworkAdapterInfo> GetAdapters()
+    private readonly SnapshotCache<IReadOnlyCollection<NetworkAdapterInfo>> _cache =
+        new(CollectAdapters, TimeSpan.FromSeconds(5));
+
+    public IReadOnlyCollection<NetworkAdapterInfo> GetAdapters() => _cache.Read();
+    public void Invalidate() => _cache.Invalidate();
+
+    private static IReadOnlyCollection<NetworkAdapterInfo> CollectAdapters()
     {
         return NetworkInterface.GetAllNetworkInterfaces()
             .Select(CreateAdapterInfo)
@@ -58,6 +64,11 @@ public sealed class SystemNetworkAdapterSource : INetworkAdapterSource
 
 public sealed class ExternalTunnelDetector(INetworkAdapterSource adapterSource)
 {
+    internal void Invalidate()
+    {
+        if (adapterSource is SystemNetworkAdapterSource source) source.Invalidate();
+    }
+
     public string GetNetworkIdentity()
     {
         var signature = string.Join('\n', adapterSource.GetAdapters()

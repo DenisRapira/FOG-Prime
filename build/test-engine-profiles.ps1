@@ -6,6 +6,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $runtime = (Resolve-Path -LiteralPath $RuntimeDirectory).Path
 $profiles = Get-Content -LiteralPath $ProfilesPath -Raw | ConvertFrom-Json
+$games = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\FOG.Agent\games.json') -Raw | ConvertFrom-Json
+$gameDomains = @($games | ForEach-Object { $_.domains })
 foreach ($profile in $profiles) {
   foreach ($gameFilterEnabled in @($false, $true)) {
     if ($profile.executable -ne 'FOG.Engine.exe') { throw 'Unexpected engine executable.' }
@@ -16,7 +18,23 @@ foreach ($profile in $profiles) {
     $info.CreateNoWindow = $true
     $info.ArgumentList.Add('--dry-run')
     $arguments = @($profile.arguments)
-    if (!$gameFilterEnabled) {
+    if ($gameFilterEnabled) {
+        $arguments = @($arguments | ForEach-Object {
+            if ($_.StartsWith('--hostlist-domains=', [StringComparison]::Ordinal)) {
+                $domains = [Collections.Generic.List[string]]::new()
+                $domains.AddRange([string[]]$_.Substring('--hostlist-domains='.Length).Split(','))
+                if ($domains -contains 'robrun.com') {
+                    foreach ($domain in $gameDomains) {
+                        if ($domains -notcontains $domain) { $domains.Add($domain) }
+                    }
+                    '--hostlist-domains=' + ($domains -join ',')
+                }
+                else { $_ }
+            }
+            else { $_ }
+        })
+    }
+    else {
         $boundary = [Array]::IndexOf($arguments, '--filter-tcp=1024-65535')
         if ($boundary -le 0 -or $arguments[$boundary - 1] -ne '--new') { throw 'Missing game filter boundary.' }
         $arguments = @($arguments[0..($boundary - 2)] | ForEach-Object {

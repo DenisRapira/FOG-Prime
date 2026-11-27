@@ -25,7 +25,8 @@ $temporary = Join-Path $env:TEMP ("fog-windivert-" + [guid]::NewGuid().ToString(
 New-Item -ItemType Directory -Path $temporary | Out-Null
 try {
     $archive = Join-Path $temporary "windivert.zip"
-    Invoke-WebRequest -Uri "https://github.com/basil00/WinDivert/releases/download/v2.2.2/WinDivert-2.2.2-A.zip" -OutFile $archive -UseBasicParsing
+    Invoke-WebRequest -Uri "https://github.com/basil00/WinDivert/releases/download/v2.2.2/WinDivert-2.2.2-A.zip" -OutFile $archive -UseBasicParsing -TimeoutSec 60
+    & (Join-Path $PSScriptRoot 'verify-windivert-archive.ps1') -ArchivePath $archive
     Expand-Archive $archive -DestinationPath $temporary
 
     $dll = Get-ChildItem $temporary -Recurse -Filter WinDivert.dll |
@@ -39,6 +40,12 @@ try {
     Copy-Item $dll.FullName, $driver.FullName -Destination $output -Force
 }
 finally {
+    $resolvedTemporary = [IO.Path]::GetFullPath($temporary)
+    $temporaryRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+    if (!$resolvedTemporary.StartsWith($temporaryRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        ![IO.Path]::GetFileName($resolvedTemporary).StartsWith('fog-windivert-')) {
+        throw 'Unsafe WinDivert staging cleanup path.'
+    }
     Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
 }
 

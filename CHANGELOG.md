@@ -2,6 +2,64 @@
 
 All notable changes are documented here. This project follows Semantic Versioning.
 
+## [2.0.3] - 2026-11-27
+
+- Add CSS connection contours, animated stage links and a confirmed-only success
+  mark. Busy motion stops on success/error and while hidden; reduced motion
+  remains supported. No animation library, external assets or runtime timers added.
+- Add actual-state connection stages without profile names or fictitious progress;
+  pause animation while hidden and respect reduced-motion preferences.
+- Best-effort suspend the minimized WebView2 renderer without stopping the Agent;
+  coalesce hidden status messages and handle rapid restore/disposal races.
+- Cancel obsolete topology probes asynchronously, release the command gate
+  promptly and contain slow/faulty cancellation callbacks. Add regression tests
+  for cancellation races, source cleanup and browser sleep/restore failures.
+- Add an opt-in `-CompressBundles` packaging experiment and startup-to-Agent
+  timing. It approximately halves the local extracted package, but increases
+  memory in the measured sample; compression remains off by default.
+- Embed a custom multi-resolution FOG icon in the launcher and application
+  window. Keep only `FOG Prime.exe` as an executable in the package root;
+  move Agent, runtime and configuration to `app/` with matching integrity,
+  diagnostics, process ownership and packaging checks.
+- Serialize Start/Stop intent and discard in-flight health results after a
+  network/VPN topology change; add deterministic mock regression coverage.
+- Align stable/candidate versions across README and both site translations.
+  Validate metadata, managed advisories and UI/site states in CI. Tagged
+  builds create drafts only, with publication permissions in a separate job.
+- Keep user packages minimal: allowlisted runtime files and mandatory notices;
+  audit reports, screenshots, symbols and development tools stay outside ZIPs.
+- Retire the obsolete shared-pipe startup test and require explicit opt-in for
+  live lifecycle tests, with cleanup scoped to the test installation.
+- Pin the official WinDivert download before extraction and add a read-only
+  release hash/signature inventory with optional VirusTotal hash-only lookup.
+  No automatic sample uploads or clean-malware verdicts are implied.
+- Reduce stable background polling, cache adapter/process snapshots, pause
+  hidden UI work and avoid redundant IPC pings, renders and state writes.
+- Wake reconciliation on network changes and Engine exit; invalidate old
+  network evidence without restarting an established Engine solely for an event.
+- Remember up to 16 network/mode profile contexts with seven-day expiry and
+  migration from v2 state. Preserve manual Game Filter and no process-triggered
+  application startup.
+- Move the application, CI and locked restores to .NET 10 LTS.
+- Pin verified runtime files, manifest and ancestor directories for the Agent
+  lifetime; reuse the retained verification instead of rehashing unchanged files.
+- Hold the verified Agent file/path through launch and authentication.
+- Bound IPC read/write time, WebView command origin/size and GitHub update
+  response size/time. Disable update HTTP redirects.
+- Consolidate dependency notices without changing FOG's MIT license. Verify
+  pinned Flowseal LICENSE.txt, retain full Cygwin/newlib terms and provide
+  matching native dependency sources as separate release assets.
+- Add an embedded, validated multi-game catalog: ROB RUN and Warframe.
+- Keep the catalog internal and expose only the Game Filter switch.
+  Add warframe.com only while Game Filter is enabled; retain the
+  original service rules and capture ranges when disabled.
+- Include the catalog fingerprint in remembered-profile network context.
+- Bound domain expansion and reject invalid catalog entries.
+  Keep game filtering opt-in and persist the choice.
+- Preserve the existing destination-scoped TCP/UDP filter, runtime driver,
+  local-network exclusions and Discord/YouTube rule priority. Game-session
+  recovery, NAT repair and anti-cheat compatibility are not guaranteed.
+
 ## [2.0.2] - 2026-11-15
 
 - Add an opt-in Game Filter switch with ROB RUN as the first listed game.

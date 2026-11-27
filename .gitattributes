@@ -15,3 +15,5 @@
 *.exe binary
 *.sys binary
 FOG.Engine/payloads/flowseal-1.10.4/*.txt -text
+# Retain upstream license formatting without applying source-code whitespace rules.
+licenses/*.txt -whitespace

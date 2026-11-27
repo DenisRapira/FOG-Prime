@@ -7,6 +7,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 $package = (Resolve-Path $PackageDirectory).Path
+$ownedPaths = @(
+    [IO.Path]::GetFullPath((Join-Path $package 'FOG Prime.exe')),
+    [IO.Path]::GetFullPath((Join-Path $package 'app/FOG.Agent.exe')),
+    [IO.Path]::GetFullPath((Join-Path $package 'app/runtime/FOG.Engine.exe'))
+)
+$enginePath = Join-Path $package 'app/runtime/FOG.Engine.exe'
 $testRoot = Join-Path $env:TEMP ("fog-eac-lifecycle-" + [guid]::NewGuid().ToString("N"))
 $statePath = Join-Path $env:LOCALAPPDATA "FOG Prime\state.json"
 
@@ -14,7 +20,7 @@ function Stop-FogProcesses {
     Get-Process -Name "FOG Prime", "FOG.Agent", "FOG.Engine" -ErrorAction SilentlyContinue | ForEach-Object {
         try {
             $path = $_.MainModule.FileName
-            if ($path -and $path.StartsWith($package, [StringComparison]::OrdinalIgnoreCase)) {
+            if ($path -and $ownedPaths -contains $path) {
                 $_.Kill()
                 $_.WaitForExit(3000) | Out-Null
             }
@@ -69,7 +75,7 @@ try {
     }
 
     $started = Get-Date
-    $ui = Start-Process -FilePath (Join-Path $package "FOG Prime.exe") -WorkingDirectory $package -PassThru
+    $ui = Start-Process -FilePath (Join-Path $package "FOG Prime.exe") -WorkingDirectory $package -WindowStyle Hidden -PassThru
     $duringGame = Wait-FogState {
         param($state)
         $state.state -eq "ready" -and
@@ -82,7 +88,8 @@ try {
 
     $engineId = $null
     if ($duringGame.engineRunning) {
-        $engine = Get-Process -Name "FOG.Engine" -ErrorAction Stop | Select-Object -First 1
+        $engine = Get-Process -Name "FOG.Engine" -ErrorAction Stop | Where-Object Path -eq $enginePath | Select-Object -First 1
+        if (-not $engine) { throw 'Package Engine process was not found.' }
         $engineId = $engine.Id
         $engine.Dispose()
     }
@@ -100,7 +107,8 @@ try {
     } "FOG did not settle after the EAC process exited." $started
 
     if ($engineId) {
-        $engineAfter = Get-Process -Name "FOG.Engine" -ErrorAction Stop | Select-Object -First 1
+        $engineAfter = Get-Process -Name "FOG.Engine" -ErrorAction Stop | Where-Object Path -eq $enginePath | Select-Object -First 1
+        if (-not $engineAfter) { throw 'Package Engine process was not found after the simulated signal exited.' }
         try {
             if ($engineAfter.Id -ne $engineId) {
                 throw "FOG restarted a healthy Engine when EAC exited."
@@ -119,7 +127,7 @@ try {
     }
 
     Start-Sleep -Seconds 1
-    $remaining = @(Get-Process -Name "FOG Prime", "FOG.Agent", "FOG.Engine" -ErrorAction SilentlyContinue)
+    $remaining = @(Get-Process -Name "FOG Prime", "FOG.Agent", "FOG.Engine" -ErrorAction SilentlyContinue | Where-Object { $ownedPaths -contains $_.Path })
     if ($remaining.Count -gt 0) {
         throw "FOG processes remained after UI close: $($remaining.ProcessName -join ', ')."
     }

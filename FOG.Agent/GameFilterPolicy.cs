@@ -6,7 +6,21 @@ internal static class GameFilterPolicy
 {
     public static EngineProfile Apply(EngineProfile profile, bool enabled)
     {
-        if (enabled) return profile;
+        if (enabled)
+        {
+            var domains = GameCatalog.All.SelectMany(game => game.Domains);
+            var expanded = profile.Arguments.Select(argument =>
+            {
+                const string prefix = "--hostlist-domains=";
+                if (!argument.StartsWith(prefix, StringComparison.Ordinal)) return argument;
+                var hosts = argument[prefix.Length..].Split(',');
+                if (!hosts.Contains("robrun.com", StringComparer.OrdinalIgnoreCase)) return argument;
+                return prefix + string.Join(',', hosts.Concat(domains).Distinct(StringComparer.OrdinalIgnoreCase));
+            }).ToArray();
+            if (expanded.Any(argument => argument.Length > 2048))
+                throw new InvalidDataException("Expanded game host list exceeds the argument budget.");
+            return profile with { Arguments = expanded };
+        }
         var arguments = profile.Arguments.ToList();
         var start = arguments.IndexOf("--filter-tcp=1024-65535");
         if (start <= 0 || arguments[start - 1] != "--new")

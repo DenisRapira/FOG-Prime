@@ -23,6 +23,10 @@ public partial class MainWindow : Window
     private readonly UpdateChecker _updateChecker = new();
     private readonly ConnectionPresentation _presentation = new();
     private readonly SemaphoreSlim _primeGate = new(1, 1);
+    private readonly SemaphoreSlim _monitorWake = new(0, 1);
+    private string _monitorStatus = "checking";
+    private string? _lastPrimeEnvelope;
+    private string? _lastVpnEnvelope;
     private bool _gameFilterEnabled;
     private bool _gameFilterBusy;
     private readonly CancellationTokenSource _monitorCancellation = new();
@@ -35,17 +39,56 @@ public partial class MainWindow : Window
     private CoreWebView2? _webView;
     private bool _recoveringBrowser;
     private int _browserRecoveryAttempts;
+    private BrowserSleepController? _browserSleep;
+    private bool _browserDocumentReady;
+    private readonly Dictionary<string, string> _pendingBrowserMessages = new(StringComparer.Ordinal);
 
     public MainWindow()
     {
         InitializeComponent();
         Loaded += OnLoaded;
         Closing += OnClosing;
+        StateChanged += OnWindowStateChanged;
     }
 
     private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
+
+    private async void OnWindowStateChanged(object? sender, EventArgs e)
+    {
+        WakeMonitor();
+        await UpdateBrowserSleepAsync();
+    }
+
+    private async Task UpdateBrowserSleepAsync()
+    {
+        if (_shutdownInProgress || !_browserDocumentReady || _webView is null || _browserSleep is null) return;
+        var minimized = WindowState == WindowState.Minimized;
+        var controller = _browserSleep;
+        try
+        {
+            Browser.Visibility = minimized ? Visibility.Hidden : Visibility.Visible;
+            var transition = controller.SetMinimizedAsync(minimized);
+            if (!minimized) FlushBrowserMessages();
+            await transition;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException)
+        {
+            // Sleeping is optional; never stop the independent Agent on a browser power error.
+            DiagnosticLog.Write("UI", "WebView2 sleep transition failed", ex);
+        }
+    }
+
+    private void FlushBrowserMessages()
+    {
+        foreach (var (type, envelope) in _pendingBrowserMessages.ToArray())
+        {
+            DeliverBrowserMessage(type, envelope);
+            _pendingBrowserMessages.Remove(type);
+        }
+        WakeMonitor();
+    }
 
     private async void OnClosing(object? sender, CancelEventArgs e)
     {
@@ -107,6 +150,18 @@ public partial class MainWindow : Window
             await Browser.EnsureCoreWebView2Async(environment);
             if (_shutdownInProgress) return;
             _webView = Browser.CoreWebView2;
+            var view = _webView;
+            _browserSleep = new BrowserSleepController(async () =>
+            {
+                if (_shutdownInProgress || !ReferenceEquals(view, _webView)) return false;
+                var suspended = await view.TrySuspendAsync();
+                if (!_shutdownInProgress && ReferenceEquals(view, _webView))
+                    DiagnosticLog.Write("UI", $"WebView2 sleep requested; accepted={suspended}");
+                return suspended;
+            }, () =>
+            {
+                if (!_shutdownInProgress && ReferenceEquals(view, _webView)) view.Resume();
+            });
             _webView.ProcessFailed += OnBrowserProcessFailed;
             Browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             Browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
@@ -127,6 +182,10 @@ public partial class MainWindow : Window
 
     private void DisposeBrowser()
     {
+        _browserSleep?.Dispose();
+        _browserSleep = null;
+        _browserDocumentReady = false;
+        _pendingBrowserMessages.Clear();
         // The control's CoreWebView2 getter itself throws after a browser crash.
         var webView = _webView;
         _webView = null;
@@ -207,8 +266,22 @@ public partial class MainWindow : Window
     {
         try
         {
+            if (!string.Equals(e.Source, "about:blank", StringComparison.OrdinalIgnoreCase) ||
+                e.WebMessageAsJson.Length > 4096) return;
             using var document = JsonDocument.Parse(e.WebMessageAsJson);
-            var command = document.RootElement.GetProperty("command").GetString();
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.TryGetProperty("command", out var commandElement) ||
+                commandElement.ValueKind != JsonValueKind.String) return;
+            var command = commandElement.GetString();
+            if (command == "ready")
+            {
+                // A recreated document has no state, even when the Agent has not changed.
+                _lastPrimeEnvelope = null;
+                _lastVpnEnvelope = null;
+                _pendingBrowserMessages.Clear();
+                _browserDocumentReady = true;
+                _ = UpdateBrowserSleepAsync();
+            }
 
             switch (command)
             {
@@ -277,6 +350,7 @@ public partial class MainWindow : Window
     {
         if (!await _primeGate.WaitAsync(0)) return;
         _gameFilterBusy = true;
+        WakeMonitor();
         try
         {
             await RenderSnapshotAsync(null, null);
@@ -307,6 +381,7 @@ public partial class MainWindow : Window
         try
         {
             _autoStartRequested |= autoStart;
+            WakeMonitor();
             _presentation.Reset();
             _presentation.Present(null);
             await PostAsync("prime", new PrimePayload("checking", "Подключаемся", "Это займёт немного времени.", 0, null, Array.Empty<CheckItem>(), _gameFilterEnabled, true));
@@ -362,7 +437,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                await _monitorWake.WaitAsync(GetMonitorInterval(), cancellationToken);
                 var response = await _agentClient.SendAsync("status", cancellationToken);
                 if (_autoStartRequested && _primeGate.CurrentCount != 0 && response.Snapshot?.State == "stopped")
                 {
@@ -381,6 +456,21 @@ public partial class MainWindow : Window
                 await RenderSnapshotAsync(null, null);
             }
         }
+    }
+
+    private void WakeMonitor()
+    {
+        Dispatcher.VerifyAccess();
+        if (!_shutdownInProgress && _monitorWake.CurrentCount == 0) _monitorWake.Release();
+    }
+
+    private TimeSpan GetMonitorInterval()
+    {
+        Dispatcher.VerifyAccess();
+        if (_gameFilterBusy || _primeGate.CurrentCount == 0 ||
+            _monitorStatus is not ("ready" or "vpnReady" or "needsAttention"))
+            return TimeSpan.FromSeconds(1);
+        return TimeSpan.FromSeconds(WindowState == WindowState.Minimized ? 10 : 3);
     }
 
     private async Task RenderSnapshotAsync(AgentSnapshot? snapshot, DiagnosticsPayload? diagnostics)
@@ -447,9 +537,9 @@ public partial class MainWindow : Window
         AddCheck(checks, "Windows", OperatingSystem.IsWindows(), "Supported platform.", "FOG Prime runs on Windows only.");
         AddCheck(checks, "WebView2", HasWebView2Runtime(out var version), version, "WebView2 Runtime is missing.");
         AddCheck(checks, "Privileges", IsAdministrator(), "Administrator session.", "Administrator permission is required.");
-        AddCheck(checks, "FOG Agent", File.Exists(Path.Combine(baseDirectory, "FOG.Agent.exe")), "Local Agent found.", "FOG.Agent.exe is missing.");
-        AddCheck(checks, "Runtime manifest", File.Exists(Path.Combine(baseDirectory, "runtime.manifest.json")), "Integrity manifest found.", "Runtime manifest is missing.");
-        AddCheck(checks, "FOG Engine", File.Exists(Path.Combine(baseDirectory, "runtime", "FOG.Engine.exe")), "Engine runtime found.", "FOG Engine runtime is missing.");
+        AddCheck(checks, "FOG Agent", File.Exists(PackagePaths.Agent(baseDirectory)), "Local Agent found.", "FOG.Agent.exe is missing.");
+        AddCheck(checks, "Runtime manifest", File.Exists(PackagePaths.Manifest(baseDirectory)), "Integrity manifest found.", "Runtime manifest is missing.");
+        AddCheck(checks, "FOG Engine", File.Exists(PackagePaths.Engine(baseDirectory)), "Engine runtime found.", "FOG Engine runtime is missing.");
 
         var summary = new Summary(
             checks.Count(check => check.Status == "ok"),
@@ -462,17 +552,36 @@ public partial class MainWindow : Window
 
     private async Task PostAsync(string type, object payload)
     {
-        var envelope = JsonSerializer.Serialize(new { type, payload }, _json);
         await Dispatcher.InvokeAsync(() =>
         {
             if (_shutdownInProgress || _webView is null) return;
-            try { _webView.PostWebMessageAsJson(envelope); }
-            catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException)
+            if (payload is PrimePayload prime) _monitorStatus = prime.Status;
+            var envelope = JsonSerializer.Serialize(new { type, payload }, _json);
+            if (WindowState == WindowState.Minimized)
             {
-                DiagnosticLog.Write("UI", "WebView2 message delivery failed", ex);
-                _ = RecoverBrowserAsync();
+                if (type is "prime" or "vpn" or "update") _pendingBrowserMessages[type] = envelope;
+                return;
             }
+            DeliverBrowserMessage(type, envelope);
         });
+    }
+
+    private void DeliverBrowserMessage(string type, string envelope)
+    {
+        if (_shutdownInProgress || _webView is null) return;
+        if ((type == "prime" && envelope == _lastPrimeEnvelope) ||
+            (type == "vpn" && envelope == _lastVpnEnvelope)) return;
+        try
+        {
+            _webView.PostWebMessageAsJson(envelope);
+            if (type == "prime") _lastPrimeEnvelope = envelope;
+            if (type == "vpn") _lastVpnEnvelope = envelope;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException)
+        {
+            DiagnosticLog.Write("UI", "WebView2 message delivery failed", ex);
+            _ = RecoverBrowserAsync();
+        }
     }
 
     private static void AddCheck(List<CheckItem> checks, string name, bool ok, string detail, string failDetail)

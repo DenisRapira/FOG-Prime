@@ -11,13 +11,18 @@ $ErrorActionPreference = "Stop"
 $package = (Resolve-Path $PackageDirectory).Path
 $statePath = Join-Path $env:LOCALAPPDATA "FOG Prime\state.json"
 $processNames = @("FOG Prime", "FOG.Agent", "FOG.Engine")
+$ownedPaths = @(
+    [IO.Path]::GetFullPath((Join-Path $package 'FOG Prime.exe')),
+    [IO.Path]::GetFullPath((Join-Path $package 'app/FOG.Agent.exe')),
+    [IO.Path]::GetFullPath((Join-Path $package 'app/runtime/FOG.Engine.exe'))
+)
 
 function Get-PackageProcesses {
     $matches = @()
     Get-Process -Name $processNames -ErrorAction SilentlyContinue | ForEach-Object {
         try {
             $path = $_.MainModule.FileName
-            if ($path -and $path.StartsWith($package, [StringComparison]::OrdinalIgnoreCase)) {
+            if ($path -and $ownedPaths -contains $path) {
                 $matches += $_
             }
             else {
@@ -74,7 +79,7 @@ $ui = $null
 try {
     Stop-PackageProcesses
     $started = Get-Date
-    $ui = Start-Process -FilePath (Join-Path $package "FOG Prime.exe") -WorkingDirectory $package -PassThru
+    $ui = Start-Process -FilePath (Join-Path $package "FOG Prime.exe") -WorkingDirectory $package -WindowStyle Hidden -PassThru
     $ready = Wait-Ready $started
     Start-Sleep -Seconds 10
 

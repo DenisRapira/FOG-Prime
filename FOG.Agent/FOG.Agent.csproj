@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <FogProfilesPath Condition="'$(FogProfilesPath)' == ''">$(MSBuildProjectDirectory)\profiles.json</FogProfilesPath>
@@ -19,6 +19,8 @@
 
   <ItemGroup>
     <None Remove="profiles.json" />
+    <None Remove="games.json" />
+    <EmbeddedResource Include="games.json" LogicalName="FOG.Agent.TrustedGames.json" />
     <None Remove="runtime.manifest.json" />
     <EmbeddedResource Include="$(FogProfilesPath)" LogicalName="FOG.Agent.TrustedProfiles.json" />
     <EmbeddedResource Include="$(FogRuntimeManifestPath)" LogicalName="FOG.Agent.TrustedRuntimeManifest.json" Condition="'$(FogRuntimeManifestPath)' != ''" />

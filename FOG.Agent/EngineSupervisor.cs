@@ -24,6 +24,21 @@ public sealed class EngineSupervisor(
     private bool? _gameFilterEnabled;
     private bool GameFilterEnabled => _gameFilterEnabled ??= _gameFilterSettings.Load();
     private readonly HealthRefreshSignal _healthRefresh = new();
+    private readonly HealthRefreshSignal _environmentRefresh = new();
+    private string? _observedNetworkIdentity;
+    private long _topologyGeneration;
+    private long _observedTopologyGeneration;
+    private long _adapterSnapshotGeneration;
+    private ProbeCancellation? _activeProbe;
+    private ProbeTopology? _lastProbeTopology;
+    private readonly Func<HealthCheckKind, CancellationToken, Task<IReadOnlyList<ProbeResult>>> _checkHealth =
+        (kind, token) => kind switch
+        {
+            HealthCheckKind.Direct => healthChecker.CheckDirectAsync(token),
+            HealthCheckKind.Startup => healthChecker.CheckStartupAsync(token),
+            HealthCheckKind.Confirmation => healthChecker.CheckStartupAsync(token, confirm: true),
+            _ => healthChecker.CheckAsync(token)
+        };
     private readonly ProfileSearch _profileSearch = new();
     private DateTimeOffset _qualificationStartedAt;
     private EngineInstance? _engine;
@@ -59,6 +74,17 @@ public sealed class EngineSupervisor(
     internal Task WaitForHealthRefreshAsync(TimeSpan interval, CancellationToken cancellationToken) =>
         _healthRefresh.WaitAsync(interval, cancellationToken);
 
+    internal Task<bool> WaitForEnvironmentRefreshAsync(TimeSpan interval, CancellationToken cancellationToken) =>
+        _environmentRefresh.WaitAsync(interval, cancellationToken);
+
+    internal void NotifyNetworkChanged()
+    {
+        var generation = Interlocked.Increment(ref _topologyGeneration);
+        var probe = Volatile.Read(ref _activeProbe);
+        if (probe is not null && probe.Generation < generation) probe.Supersede();
+        _environmentRefresh.Request();
+    }
+
     public async Task<AgentSnapshot> SetGameFilterAsync(bool enabled, CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken);
@@ -93,11 +119,13 @@ public sealed class EngineSupervisor(
 
             ResetStartupCycle();
 
+            var topology = CaptureProbeTopology();
             var tunnel = tunnelDetector.FindActiveTunnel();
             LogTunnelInfo(tunnel, nameof(StartBestAsync));
             if (TransportPolicy.ShouldProbeBeforeEngine(tunnel))
             {
-                _lastProbes = await healthChecker.CheckDirectAsync(cancellationToken);
+                if (!await TryRefreshProbesAsync(topology, HealthCheckKind.Direct, cancellationToken))
+                    return CreateSnapshot(CurrentState);
                 LogProbeResults(_lastProbes, nameof(StartBestAsync));
                 if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes))
                 {
@@ -130,10 +158,10 @@ public sealed class EngineSupervisor(
 
     public async Task<AgentSnapshot> StopAsync(CancellationToken cancellationToken)
     {
-        _desiredRunning = false;
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            _desiredRunning = false;
             _directMode = false;
             _waitingForTunnel = false;
             _compatibility = null;
@@ -172,11 +200,13 @@ public sealed class EngineSupervisor(
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            var topology = CaptureProbeTopology();
             var tunnel = tunnelDetector.FindActiveTunnel();
             LogTunnelInfo(tunnel, nameof(RefreshHealthAsync));
             if (tunnel is not null && !IsRunning)
             {
-                _lastProbes = await healthChecker.CheckAsync(cancellationToken);
+                if (!await TryRefreshProbesAsync(topology, HealthCheckKind.Regular, cancellationToken))
+                    return CreateSnapshot(CurrentState);
                 LogProbeResults(_lastProbes, nameof(RefreshHealthAsync));
                 if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
                 {
@@ -214,15 +244,32 @@ public sealed class EngineSupervisor(
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            var topology = CaptureProbeTopology();
+            var networkChanged = _observedNetworkIdentity is not null &&
+                (_observedNetworkIdentity != topology.NetworkIdentity || _observedTopologyGeneration != topology.Generation);
+            _observedNetworkIdentity = topology.NetworkIdentity;
+            _observedTopologyGeneration = topology.Generation;
+            if (networkChanged)
+            {
+                _preferredProfileLoaded = false;
+                _preferredContext = null;
+                _rememberedProfileId = null;
+                if (_desiredRunning)
+                {
+                    healthChecker.BeginProfileObservation();
+                    _lastProbes = Array.Empty<ProbeResult>();
+                    _healthRefresh.Request();
+                }
+            }
             var tunnel = tunnelDetector.FindActiveTunnel();
             LogTunnelInfo(tunnel, nameof(ReconcileCompatibilityAsync));
             if (tunnel is not null)
             {
                 var tunnelIdentity = GetTunnelIdentity(tunnel);
                 var tunnelChanged = !string.Equals(tunnelIdentity, _activeTunnelIdentity, StringComparison.Ordinal);
-                if (tunnelChanged && _desiredRunning && (_directMode || IsRunning || _lastProbes.Count > 0))
+                if ((tunnelChanged || networkChanged && _directMode) && _desiredRunning && (_directMode || IsRunning || _lastProbes.Count > 0))
                 {
-                    return await ReevaluateTunnelAsync(tunnel, cancellationToken);
+                    return await ReevaluateTunnelAsync(tunnel, topology, cancellationToken);
                 }
 
                 if (IsStartupQualificationDue())
@@ -231,7 +278,7 @@ public sealed class EngineSupervisor(
                 }
 
                 // Only an established direct session owns reusable tunnel-only probes.
-                if (_directMode && TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
+                if (_directMode && !RejectStaleProbeCache() && TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
                 {
                     _directMode = true;
                     _waitingForTunnel = false;
@@ -295,16 +342,20 @@ public sealed class EngineSupervisor(
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            if (!_desiredRunning)
+            {
+                UpdateCompatibility();
+                return CreateSnapshot("stopped");
+            }
+            var topology = CaptureProbeTopology();
             var tunnel = tunnelDetector.FindActiveTunnel();
             LogTunnelInfo(tunnel, nameof(RecoverIfNeededAsync));
             if (tunnel is not null)
             {
                 var engineWasRunning = IsRunning;
-                _lastProbes = engineWasRunning
-                    ? _startupQualificationPending
-                        ? await healthChecker.CheckStartupAsync(cancellationToken, confirm: _startupQualificationFailures > 0)
-                        : await healthChecker.CheckAsync(cancellationToken)
-                    : await healthChecker.CheckDirectAsync(cancellationToken);
+                if (!await TryRefreshProbesAsync(topology,
+                    engineWasRunning ? EngineHealthCheckKind : HealthCheckKind.Direct, cancellationToken))
+                    return CreateSnapshot(CurrentState);
                 LogProbeResults(_lastProbes, nameof(RecoverIfNeededAsync));
                 if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, engineWasRunning || IsRunning))
                 {
@@ -369,21 +420,28 @@ public sealed class EngineSupervisor(
 
     private async Task<AgentSnapshot> RefreshHealthInternalAsync(CancellationToken cancellationToken)
     {
+        var topology = CaptureProbeTopology();
         if (!IsRunning)
         {
             if (_directMode)
             {
-                _lastProbes = await healthChecker.CheckAsync(cancellationToken);
+                if (!await TryRefreshProbesAsync(topology, HealthCheckKind.Regular, cancellationToken))
+                    return CreateSnapshot(CurrentState);
                 LogProbeResults(_lastProbes, nameof(RefreshHealthInternalAsync));
+                if (tunnelDetector.FindActiveTunnel() is not { } currentTunnel)
+                {
+                    DiscardStaleProbes();
+                    return CreateSnapshot(CurrentState);
+                }
+                UpdateCompatibility(currentTunnel);
                 return CreateSnapshot(_lastProbes.All(probe => probe.Ok) ? "ready" : "degraded");
             }
 
             return CreateSnapshot(_desiredRunning ? "recovering" : "stopped");
         }
 
-        _lastProbes = _startupQualificationPending
-            ? await healthChecker.CheckStartupAsync(cancellationToken, confirm: _startupQualificationFailures > 0)
-            : await healthChecker.CheckAsync(cancellationToken);
+        if (!await TryRefreshProbesAsync(topology, EngineHealthCheckKind, cancellationToken))
+            return CreateSnapshot(CurrentState);
         LogProbeResults(_lastProbes, nameof(RefreshHealthInternalAsync));
         return await ApplyEngineProbeResultsAsync(
             "Connectivity probes are degraded; keeping the running Engine profile unchanged",
@@ -395,6 +453,7 @@ public sealed class EngineSupervisor(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (RejectStaleProbeCache()) return CreateSnapshot(CurrentState);
         if (!IsRunning)
         {
             _lastProbes = Array.Empty<ProbeResult>();
@@ -601,6 +660,7 @@ public sealed class EngineSupervisor(
 
     private async Task<AgentSnapshot?> DeferToActiveTunnelAsync(CancellationToken cancellationToken)
     {
+        if (RejectStaleProbeCache()) return CreateSnapshot(CurrentState);
         var tunnel = tunnelDetector.FindActiveTunnel();
         if (!_directMode || tunnel is null || !TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
         {
@@ -626,6 +686,7 @@ public sealed class EngineSupervisor(
 
     private async Task<AgentSnapshot> ReevaluateTunnelAsync(
         NetworkAdapterInfo tunnel,
+        ProbeTopology topology,
         CancellationToken cancellationToken)
     {
         logger.LogInformation("Tunnel topology changed for {Tunnel}; verifying the new route before selecting transport", tunnel.Name);
@@ -636,7 +697,8 @@ public sealed class EngineSupervisor(
 
         _directMode = false;
         _waitingForTunnel = false;
-        _lastProbes = await healthChecker.CheckDirectAsync(cancellationToken);
+        if (!await TryRefreshProbesAsync(topology, HealthCheckKind.Direct, cancellationToken))
+            return CreateSnapshot(CurrentState);
         LogProbeResults(_lastProbes, nameof(ReevaluateTunnelAsync));
         if (TransportPolicy.CanUseDirectMode(tunnel, _lastProbes, IsRunning))
         {
@@ -660,6 +722,7 @@ public sealed class EngineSupervisor(
 
     private void UpdateCompatibility()
     {
+        RefreshNetworkSnapshot(Interlocked.Read(ref _topologyGeneration));
         UpdateCompatibility(tunnelDetector.FindActiveTunnel());
     }
 
@@ -864,6 +927,7 @@ public sealed class EngineSupervisor(
         process.EnableRaisingEvents = true;
         process.Exited += (_, _) =>
         {
+            _environmentRefresh.Request();
             instance.GameAssets?.Dispose();
             sessionLeaseStore.Clear(process.Id);
             var code = TryGetExitCode(process);
@@ -1030,7 +1094,7 @@ public sealed class EngineSupervisor(
         {
             if (state is not null)
             {
-                preferredProfileStore.Clear();
+                preferredProfileStore.Clear(context);
             }
             return;
         }
@@ -1045,9 +1109,10 @@ public sealed class EngineSupervisor(
 
     private void RememberSuccessfulProfile(string profileId)
     {
+        if (RejectStaleProbeCache()) return;
         // A VPN can carry the successful probes without validating this Engine profile.
         if (!TransportPolicy.CanRememberEngineProfile(tunnelDetector.FindActiveTunnel())) return;
-        var context = GetPreferredContext();
+        var context = GetPreferredContext(_lastProbeTopology?.NetworkIdentity);
         if (_preferredContext == context && string.Equals(_rememberedProfileId, profileId, StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -1067,20 +1132,176 @@ public sealed class EngineSupervisor(
             return;
         }
 
-        preferredProfileStore.Clear();
+        preferredProfileStore.Clear(_preferredContext);
         _rememberedProfileId = null;
         logger.LogInformation("Remembered profile {ProfileId} is no longer ready; reserve selection is enabled", profileId);
     }
 
-    private string GetPreferredContext()
+    private string GetPreferredContext(string? networkIdentity = null)
     {
         var profiles = System.Text.Json.JsonSerializer.Serialize(catalog.All);
         var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(profiles)));
-        return tunnelDetector.GetNetworkIdentity() + ":" + digest + ":game=" + GameFilterEnabled;
+        return (networkIdentity ?? tunnelDetector.GetNetworkIdentity()) + ":" + digest + ":game=" + GameFilterEnabled + ":" + GameCatalog.Fingerprint;
+    }
+
+    internal enum HealthCheckKind { Regular, Direct, Startup, Confirmation }
+
+    private sealed record ProbeTopology(long Generation, string NetworkIdentity);
+
+    private HealthCheckKind EngineHealthCheckKind => !_startupQualificationPending ? HealthCheckKind.Regular :
+        _startupQualificationFailures > 0 ? HealthCheckKind.Confirmation : HealthCheckKind.Startup;
+
+    private ProbeTopology CaptureProbeTopology()
+    {
+        var generation = Interlocked.Read(ref _topologyGeneration);
+        RefreshNetworkSnapshot(generation);
+        return new(generation, tunnelDetector.GetNetworkIdentity());
+    }
+
+    private void RefreshNetworkSnapshot(long generation)
+    {
+        if (_adapterSnapshotGeneration == generation) return;
+        // Snapshot collection may hold a lock; never invalidate from the network callback.
+        tunnelDetector.Invalidate();
+        _adapterSnapshotGeneration = generation;
+    }
+
+    private bool IsCurrentTopology(ProbeTopology topology) =>
+        topology.Generation == Interlocked.Read(ref _topologyGeneration) &&
+        topology.NetworkIdentity == tunnelDetector.GetNetworkIdentity() &&
+        topology.Generation == Interlocked.Read(ref _topologyGeneration);
+
+    private async Task<bool> TryRefreshProbesAsync(
+        ProbeTopology topology, HealthCheckKind kind, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var cancellation = new ProbeCancellation(topology.Generation, cancellationToken, logger);
+        Task<IReadOnlyList<ProbeResult>>? pending = null;
+        Volatile.Write(ref _activeProbe, cancellation);
+        try
+        {
+            if (!IsCurrentTopology(topology))
+            {
+                DiscardStaleProbes();
+                return false;
+            }
+
+            pending = _checkHealth(kind, cancellation.Token);
+            var completed = await Task.WhenAny(pending, cancellation.Superseded.Task).WaitAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (completed != pending)
+            {
+                DiscardStaleProbes();
+                return false;
+            }
+
+            var probes = await pending;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentTopology(topology))
+            {
+                DiscardStaleProbes();
+                return false;
+            }
+
+            _lastProbeTopology = topology;
+            _lastProbes = probes;
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellation.Superseded.Task.IsCompleted)
+        {
+            DiscardStaleProbes();
+            return false;
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _activeProbe, null, cancellation);
+            cancellation.Complete(pending);
+        }
+    }
+
+    private sealed class ProbeCancellation(long generation, CancellationToken caller, ILogger logger)
+    {
+        private readonly object _sync = new();
+        private readonly CancellationTokenSource _source = CancellationTokenSource.CreateLinkedTokenSource(caller);
+        private Task? _cancellation;
+        private bool _completed;
+        public long Generation { get; } = generation;
+        public CancellationToken Token => _source.Token;
+        public TaskCompletionSource Superseded { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public Task Cleanup { get; private set; } = Task.CompletedTask;
+
+        public void Supersede()
+        {
+            lock (_sync)
+            {
+                if (_completed || _cancellation is not null) return;
+                Superseded.TrySetResult();
+                _cancellation = _source.CancelAsync();
+            }
+        }
+
+        public void Complete(Task? pending)
+        {
+            lock (_sync)
+            {
+                _completed = true;
+                // Cleanup owns the source until both I/O and asynchronous callbacks have finished.
+                Cleanup = Task.Run(async () =>
+                {
+                    try
+                    {
+                        if (pending is not null)
+                        {
+                            try { await pending.ConfigureAwait(false); }
+                            catch (OperationCanceledException) { }
+                            catch (Exception ex) { logger.LogDebug(ex, "Retired health probe failed"); }
+                        }
+                        if (_cancellation is not null)
+                        {
+                            try { await _cancellation.ConfigureAwait(false); }
+                            catch (Exception ex) { logger.LogDebug(ex, "Health probe cancellation callback failed"); }
+                        }
+                    }
+                    finally { _source.Dispose(); }
+                });
+            }
+        }
+    }
+
+    private bool RejectStaleProbeCache()
+    {
+        if (_lastProbes.Count == 0 || _lastProbeTopology is null || IsCurrentTopology(_lastProbeTopology)) return false;
+        DiscardStaleProbes();
+        return true;
+    }
+
+    private void DiscardStaleProbes()
+    {
+        // A network event can arrive while _gate is held by an asynchronous probe.
+        _lastProbes = Array.Empty<ProbeResult>();
+        _lastProbeTopology = null;
+        _directMode = false;
+        _waitingForTunnel = false;
+        _preferredProfileLoaded = false;
+        _preferredContext = null;
+        _rememberedProfileId = null;
+        _profileSearch.Reset();
+        _startupAttemptedProfiles.Clear();
+        _startupQualificationFailures = 0;
+        healthChecker.BeginProfileObservation();
+        UpdateCompatibility();
+        _environmentRefresh.Request();
+        _healthRefresh.Request();
     }
 
     private AgentSnapshot CreateSnapshot(string state)
     {
+        if (RejectStaleProbeCache()) state = CurrentState;
         var snapshot = new AgentSnapshot(
             state,
             IsRunning,

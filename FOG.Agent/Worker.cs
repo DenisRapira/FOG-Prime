@@ -1,4 +1,5 @@
 using FOG.Protocol;
+using System.Diagnostics;
 
 namespace FOG.Agent;
 
@@ -9,13 +10,15 @@ public sealed class Worker(
     AgentStateStore stateStore,
     ILogger<Worker> logger) : BackgroundService
 {
-    private readonly object _stateSync = new();
+    private readonly SemaphoreSlim _stateGate = new(1, 1);
     private string? _lastStateSignature;
+    private long _lastStateSavedAt;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("FOG Prime Agent started");
         await integrityVerifier.VerifyAsync(stoppingToken);
+        using var networkChanges = new NetworkChangeMonitor(supervisor.NotifyNetworkChanged);
         await Task.WhenAll(
             pipeServer.RunAsync(stoppingToken),
             RunCompatibilityLoopAsync(stoppingToken),
@@ -24,16 +27,16 @@ public sealed class Worker(
 
     private async Task RunCompatibilityLoopAsync(CancellationToken cancellationToken)
     {
+        var nextDelay = TimeSpan.Zero;
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
+                if (await supervisor.WaitForEnvironmentRefreshAsync(nextDelay, cancellationToken))
+                    await Task.Delay(TimeSpan.FromMilliseconds(750), cancellationToken);
                 var snapshot = await supervisor.ReconcileCompatibilityAsync(cancellationToken);
-                if (HasStateChanged(snapshot))
-                {
-                    await stateStore.SaveAsync(snapshot, cancellationToken);
-                    LogSnapshot("state changed", snapshot);
-                }
+                nextDelay = TransportPolicy.GetCompatibilityInterval(snapshot.State);
+                await PublishSnapshotAsync(snapshot, "state changed", cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -42,9 +45,8 @@ public sealed class Worker(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Compatibility reconciliation failed");
+                nextDelay = TransportPolicy.DegradedHealthInterval;
             }
-
-            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
         }
     }
 
@@ -58,11 +60,7 @@ public sealed class Worker(
             {
                 var snapshot = await supervisor.RecoverIfNeededAsync(cancellationToken);
                 nextDelay = TransportPolicy.GetHealthInterval(snapshot.TransportMode, snapshot.State);
-                await stateStore.SaveAsync(snapshot, cancellationToken);
-                if (HasStateChanged(snapshot))
-                {
-                    LogSnapshot("health changed", snapshot);
-                }
+                await PublishSnapshotAsync(snapshot, "health changed", cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -76,19 +74,20 @@ public sealed class Worker(
         }
     }
 
-    private bool HasStateChanged(AgentSnapshot snapshot)
+    private async Task PublishSnapshotAsync(AgentSnapshot snapshot, string source, CancellationToken cancellationToken)
     {
         var signature = GetStateSignature(snapshot);
-        lock (_stateSync)
+        await _stateGate.WaitAsync(cancellationToken);
+        try
         {
-            if (signature == _lastStateSignature)
-            {
-                return false;
-            }
-
+            var changed = signature != _lastStateSignature;
+            if (!TransportPolicy.ShouldPersistSnapshot(changed, Stopwatch.GetElapsedTime(_lastStateSavedAt))) return;
+            await stateStore.SaveAsync(snapshot, cancellationToken);
             _lastStateSignature = signature;
-            return true;
+            _lastStateSavedAt = Stopwatch.GetTimestamp();
+            if (changed) LogSnapshot(source, snapshot);
         }
+        finally { _stateGate.Release(); }
     }
 
     private static string GetStateSignature(AgentSnapshot snapshot)
@@ -103,7 +102,9 @@ public sealed class Worker(
             snapshot.Compatibility?.Signal,
             snapshot.Compatibility?.RetryAt,
             snapshot.TransportMode,
-            snapshot.ActiveTunnel);
+            snapshot.ActiveTunnel,
+            snapshot.GameFilterEnabled,
+            string.Join(',', snapshot.Probes.Select(probe => probe.Name + "=" + probe.Ok)));
     }
 
     private void LogSnapshot(string source, AgentSnapshot snapshot)

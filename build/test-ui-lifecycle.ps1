@@ -2,17 +2,27 @@ param(
     [Parameter(Mandatory)]
     [string]$PackageDirectory,
     [ValidateRange(10, 120)]
-    [int]$TimeoutSeconds = 30
+    [int]$TimeoutSeconds = 30,
+    [switch]$AllowLiveNetworkTests
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $AllowLiveNetworkTests) { throw 'This test may start the native network driver. Run only in an isolated authorized test environment with -AllowLiveNetworkTests.' }
+if (@(Get-Process -Name 'FOG Prime', 'FOG.Agent', 'FOG.Engine' -ErrorAction SilentlyContinue).Count -gt 0) {
+    throw 'Close existing FOG instances before an isolated lifecycle test. No existing processes were stopped.'
+}
 $package = (Resolve-Path $PackageDirectory).Path
+$ownedPaths = @(
+    [IO.Path]::GetFullPath((Join-Path $package 'FOG Prime.exe')),
+    [IO.Path]::GetFullPath((Join-Path $package 'app/FOG.Agent.exe')),
+    [IO.Path]::GetFullPath((Join-Path $package 'app/runtime/FOG.Engine.exe'))
+)
 $started = Get-Date
-$ui = Start-Process -FilePath (Join-Path $package "FOG Prime.exe") -WorkingDirectory $package -PassThru
+$ui = Start-Process -FilePath (Join-Path $package "FOG Prime.exe") -WorkingDirectory $package -WindowStyle Hidden -PassThru
 
 try {
     $ready = $false
-    $statePath = Join-Path $env:ProgramData "FOG Prime\state.json"
+    $statePath = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)) "FOG Prime/state.json"
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 250
@@ -46,6 +56,8 @@ finally {
     $ui.Dispose()
 
     @(Get-Process -Name "FOG Prime", "FOG.Agent", "FOG.Engine" -ErrorAction SilentlyContinue) | ForEach-Object {
-        try { $_.Kill($true) } catch [InvalidOperationException] { } finally { $_.Dispose() }
+        try {
+            if ($ownedPaths -contains $_.Path) { $_.Kill($true) }
+        } catch [InvalidOperationException] { } finally { $_.Dispose() }
     }
 }

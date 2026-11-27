@@ -7,8 +7,16 @@ public static class TransportPolicy
 {
     public static readonly TimeSpan EngineLaunchSettleDelay = TimeSpan.FromMilliseconds(300);
     public static readonly TimeSpan InitialHealthInterval = TimeSpan.FromSeconds(3);
-    public static readonly TimeSpan DirectHealthInterval = TimeSpan.FromSeconds(5);
-    public static readonly TimeSpan EngineHealthInterval = TimeSpan.FromSeconds(20);
+    public static readonly TimeSpan DirectHealthInterval = TimeSpan.FromSeconds(15);
+    public static readonly TimeSpan EngineHealthInterval = TimeSpan.FromSeconds(60);
+    public static readonly TimeSpan StoppedHealthInterval = TimeSpan.FromMinutes(2);
+    public static readonly TimeSpan DegradedHealthInterval = TimeSpan.FromSeconds(10);
+
+    internal static bool ShouldPersistSnapshot(bool changed, TimeSpan sinceLastWrite) =>
+        changed || sinceLastWrite >= TimeSpan.FromMinutes(2);
+
+    internal static TimeSpan GetCompatibilityInterval(string state) => state == "recovering"
+        ? InitialHealthInterval : state == "stopped" ? StoppedHealthInterval : TimeSpan.FromSeconds(15);
 
     public static bool ShouldProbeBeforeEngine([NotNullWhen(true)] NetworkAdapterInfo? activeTunnel) =>
         activeTunnel is not null;
@@ -29,6 +37,10 @@ public static class TransportPolicy
     public static TimeSpan GetHealthInterval(string? transportMode, string? state = null) =>
         string.Equals(state, "recovering", StringComparison.OrdinalIgnoreCase)
             ? InitialHealthInterval
+            : string.Equals(state, "stopped", StringComparison.OrdinalIgnoreCase)
+            ? StoppedHealthInterval
+            : string.Equals(state, "degraded", StringComparison.OrdinalIgnoreCase)
+            ? DegradedHealthInterval
             : string.Equals(transportMode, "engine", StringComparison.OrdinalIgnoreCase)
             ? EngineHealthInterval
             : DirectHealthInterval;

@@ -14,7 +14,12 @@ public interface ICompatibilitySignalSource
 
 public sealed class SystemCompatibilitySignalSource : ICompatibilitySignalSource
 {
-    public IReadOnlyCollection<string> GetActiveSignals()
+    private readonly SnapshotCache<IReadOnlyCollection<string>> _cache =
+        new(CollectSignals, TimeSpan.FromSeconds(15));
+
+    public IReadOnlyCollection<string> GetActiveSignals() => _cache.Read();
+
+    private static IReadOnlyCollection<string> CollectSignals()
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var process in Process.GetProcesses())

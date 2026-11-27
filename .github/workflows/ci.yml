@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, eac-compatibility]
+    branches: ['**']
   pull_request:
   workflow_dispatch:
 
@@ -16,23 +16,41 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          global-json-file: global.json
       - name: Restore
         run: dotnet restore FOG.Prime.sln --locked-mode
       - name: Build
         run: dotnet build FOG.Prime.sln -c Release --no-restore
+      - name: Check managed dependency advisories
+        shell: pwsh
+        run: ./build/test-dependency-audit.ps1
       - name: Agent policy, IPC and process lifecycle tests
         run: dotnet run --project FOG.Agent.Tests/FOG.Agent.Tests.csproj -c Release --no-build
       - name: Verify repository
-        shell: powershell
+        shell: pwsh
         run: ./build/verify-repository.ps1 -SkipBuild
+      - name: Verify source, website and release versions
+        shell: pwsh
+        run: ./build/test-release-consistency.ps1
+      - name: Install locked build-time browser checks
+        shell: pwsh
+        run: npm ci --prefix build --ignore-scripts --no-audit --no-fund
+      - name: Check mocked UI states and bilingual website
+        shell: pwsh
+        env:
+          PLAYWRIGHT_CHANNEL: msedge
+        run: |
+          node build/test-ui.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'UI checks failed.' }
+          node build/test-website.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Website checks failed.' }
 
   scripts:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Parse PowerShell scripts
-        shell: powershell
+        shell: pwsh
         run: |
           Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
             [scriptblock]::Create((Get-Content -Raw $_.FullName)) | Out-Null

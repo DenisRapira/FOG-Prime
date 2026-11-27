@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - docs/**
+      - build/test-website.cjs
+      - build/package.json
+      - build/package-lock.json
       - .github/workflows/pages.yml
   workflow_dispatch:
 
@@ -20,7 +23,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
       contents: read
       pages: write
@@ -28,6 +31,15 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate website before deploying
+        shell: pwsh
+        env:
+          PLAYWRIGHT_CHANNEL: msedge
+        run: |
+          npm ci --prefix build --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Locked browser-check dependency installation failed.' }
+          node build/test-website.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Website checks failed.' }
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
       - name: Archive website

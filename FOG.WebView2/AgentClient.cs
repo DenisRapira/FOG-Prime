@@ -18,8 +18,8 @@ internal sealed class AgentClient
     private readonly string _sessionToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     private readonly string _pipeName = "fog-prime-session-" + Guid.NewGuid().ToString("N");
     private ProcessLifetimeJob? _processJob;
-    private readonly string _agentPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "FOG.Agent.exe"));
-    private readonly string _enginePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "runtime", "FOG.Engine.exe"));
+    private readonly string _agentPath = PackagePaths.Agent(AppContext.BaseDirectory);
+    private readonly string _enginePath = PackagePaths.Engine(AppContext.BaseDirectory);
     private Process? _spawnedAgent;
     private bool _sessionPrepared;
     private int _consecutiveAuthenticationFailures;
@@ -27,7 +27,18 @@ internal sealed class AgentClient
     public async Task<AgentResponse> SendAsync(string command, CancellationToken cancellationToken)
     {
         await EnsureAvailableAsync(cancellationToken);
-        return await SendConnectedAsync(command, cancellationToken);
+        try
+        {
+            var response = await SendConnectedAsync(command, cancellationToken);
+            Interlocked.Exchange(ref _consecutiveAuthenticationFailures, 0);
+            return response;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested &&
+            ex is IOException or TimeoutException or InvalidDataException or JsonException)
+        {
+            Interlocked.Increment(ref _consecutiveAuthenticationFailures);
+            throw;
+        }
     }
 
     public async Task ShutdownAsync(CancellationToken cancellationToken)
@@ -69,6 +80,9 @@ internal sealed class AgentClient
         await _startupGate.WaitAsync(cancellationToken);
         try
         {
+            // Each real request verifies the pipe-server PID and response correlation.
+            if (_spawnedAgent is { HasExited: false } &&
+                !ShouldRestartAfterAuthenticationFailure(Volatile.Read(ref _consecutiveAuthenticationFailures))) return;
             if (_spawnedAgent is { HasExited: false } && await CanAuthenticateAsync(cancellationToken))
             {
                 _consecutiveAuthenticationFailures = 0;
@@ -101,7 +115,7 @@ internal sealed class AgentClient
                 await Task.Delay(300, cancellationToken);
             }
 
-            await VerifyAgentIntegrityAsync(_agentPath, cancellationToken);
+            using var agentLease = await VerifyAgentIntegrityAsync(_agentPath, cancellationToken);
             DiagnosticLog.Write("UI", "Agent integrity check passed");
             if (_spawnedAgent is null or { HasExited: true })
             {
@@ -109,7 +123,7 @@ internal sealed class AgentClient
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = _agentPath,
-                    WorkingDirectory = AppContext.BaseDirectory,
+                    WorkingDirectory = PackagePaths.BackendDirectory(AppContext.BaseDirectory),
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     WindowStyle = ProcessWindowStyle.Hidden,
@@ -304,7 +318,7 @@ internal sealed class AgentClient
             : "unavailable";
     }
 
-    private static async Task VerifyAgentIntegrityAsync(string agentPath, CancellationToken cancellationToken)
+    private static async Task<FileReadLease> VerifyAgentIntegrityAsync(string agentPath, CancellationToken cancellationToken)
     {
         if (!File.Exists(agentPath))
         {
@@ -320,12 +334,16 @@ internal sealed class AgentClient
             throw new InvalidDataException("Trusted Agent hash is invalid.");
         }
 
-        await using var stream = File.OpenRead(agentPath);
-        var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken));
-        if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+        var lease = FileReadLease.LockDirectories(Path.GetDirectoryName(agentPath)!);
+        try
         {
-            throw new InvalidDataException("FOG Prime Agent integrity check failed.");
+            var stream = lease.OpenRead(agentPath);
+            var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken));
+            if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("FOG Prime Agent integrity check failed.");
+            return lease;
         }
+        catch { lease.Dispose(); throw; }
     }
 
     private static void TerminateOwnedProcesses(string processName, string expectedPath)

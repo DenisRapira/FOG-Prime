@@ -6,16 +6,18 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   windows-x64:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: 8.0.x
+          global-json-file: global.json
       - uses: cygwin/cygwin-install-action@121fc294c6b6864e1d52caeaa5c8ddb33d3e90f3 # v6
         with:
           platform: x86_64
@@ -25,33 +27,62 @@ jobs:
 
       - name: Resolve version
         id: version
-        shell: powershell
+        shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { "0.0.0-$($env:GITHUB_SHA.Substring(0, 8))" }
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content docs/release-status.json -Raw | ConvertFrom-Json).candidate.version
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -cne "v$version") { throw 'Tag does not match source version.' }
+          ./build/test-release-consistency.ps1 -ExpectedVersion $version
           "value=$version" >> $env:GITHUB_OUTPUT
+      - name: Check embedded UI and website before packaging
+        shell: pwsh
+        env:
+          PLAYWRIGHT_CHANNEL: msedge
+        run: |
+          npm ci --prefix build --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Browser-check installation failed.' }
+          node build/test-ui.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'UI checks failed.' }
+          node build/test-website.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Website checks failed.' }
 
       - name: Build FOG Engine from source
-        shell: powershell
+        shell: pwsh
         run: ./FOG.Engine/build/windows/build-engine.ps1 -CygwinRoot C:\cygwin -OutputDirectory ./FOG.Engine/artifacts/win-x64
       - name: Prepare trusted runtime
-        shell: powershell
+        shell: pwsh
         run: ./FOG.Engine/build/windows/prepare-runtime.ps1 -CygwinRoot C:\cygwin -OutputDirectory ./FOG.Engine/artifacts/win-x64
       - name: Package application
-        shell: powershell
-        run: ./build/package.ps1 -EngineRuntime ./FOG.Engine/artifacts/win-x64 -OutputDirectory ./release/FOG-Prime -Version '${{ steps.version.outputs.value }}'
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: ./build/package.ps1 -EngineRuntime ./FOG.Engine/artifacts/win-x64 -OutputDirectory ./release/FOG-Prime -Version $env:RELEASE_VERSION
       - name: Verify package
-        shell: powershell
+        shell: pwsh
         run: ./build/verify-repository.ps1 -PackageDirectory ./release/FOG-Prime
+      - name: Check managed dependency advisories
+        shell: pwsh
+        run: ./build/test-dependency-audit.ps1
       - name: Test package security
-        shell: powershell
+        shell: pwsh
         run: ./build/test-package-security.ps1 -PackageDirectory ./release/FOG-Prime
+      - name: Validate native profile arguments without loading the driver
+        shell: pwsh
+        run: ./build/test-engine-profiles.ps1 -RuntimeDirectory ./release/FOG-Prime/app/runtime -ProfilesPath ./release/FOG-Prime/app/profiles.json
       - name: Create ZIP
-        shell: powershell
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
         run: |
-          $archive = "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.zip"
+          $build = Get-Content ./release/FOG-Prime/app/build-info.json -Raw | ConvertFrom-Json
+          if ($build.workingTreeModified -or $build.sourceCommit -cne $env:GITHUB_SHA -or $build.version -cne $env:RELEASE_VERSION) {
+            throw 'CI package provenance does not match the clean checked-out source.'
+          }
+          $version = $env:RELEASE_VERSION
+          $archive = "./release/FOG-Prime-${version}-win-x64.zip"
           Compress-Archive -Path ./release/FOG-Prime/* -DestinationPath $archive
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $([IO.Path]::GetFileName($archive))" | Set-Content "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256" -Encoding ascii
+          "$hash  $([IO.Path]::GetFileName($archive))" | Set-Content "./release/FOG-Prime-${version}-win-x64.sha256" -Encoding ascii
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: FOG-Prime-${{ steps.version.outputs.value }}-win-x64
@@ -59,20 +90,36 @@ jobs:
             ./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.zip
             ./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256
           if-no-files-found: error
-      - name: Publish GitHub release
-        if: github.ref_type == 'tag'
+  draft:
+    if: github.ref_type == 'tag'
+    needs: windows-x64
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Create draft for manual acceptance (never publish automatically)
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: powershell
+          RELEASE_VERSION: ${{ needs.windows-x64.outputs.version }}
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:RELEASE_VERSION
+          gh run download "$env:GITHUB_RUN_ID" --repo "$env:GITHUB_REPOSITORY" --name "FOG-Prime-${version}-win-x64" --dir ./release
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot download the checked build artifact.' }
+          $archive = "./release/FOG-Prime-${version}-win-x64.zip"
+          $checksum = "./release/FOG-Prime-${version}-win-x64.sha256"
+          $expected = (Get-Content -LiteralPath $checksum -Raw).Trim()
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -cne "$actual  $([IO.Path]::GetFileName($archive))") { throw 'Artifact checksum mismatch.' }
           gh release view "$env:GITHUB_REF_NAME" --json id 2>$null
           if ($LASTEXITCODE -eq 0) {
             Write-Host 'Release already exists; preserving its tested assets.'
             exit 0
           }
-          $notes = "docs/RELEASE-${{ steps.version.outputs.value }}.md"
-          if (Test-Path $notes) {
-            gh release create "$env:GITHUB_REF_NAME" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.zip" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256" --verify-tag --notes-file $notes --title "FOG Prime $env:GITHUB_REF_NAME"
-          } else {
-            gh release create "$env:GITHUB_REF_NAME" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.zip" "./release/FOG-Prime-${{ steps.version.outputs.value }}-win-x64.sha256" --verify-tag --generate-notes --title "FOG Prime $env:GITHUB_REF_NAME"
-          }
+          $notes = "docs/RELEASE-${version}.md"
+          if (-not (Test-Path -LiteralPath $notes)) { throw 'Release notes required.' }
+          gh release create "$env:GITHUB_REF_NAME" "./release/FOG-Prime-${version}-win-x64.zip" "./release/FOG-Prime-${version}-win-x64.sha256" --draft --verify-tag --notes-file $notes --title "FOG Prime $env:GITHUB_REF_NAME"
+          if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed.' }

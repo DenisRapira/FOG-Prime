@@ -5,6 +5,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+& (Join-Path $PSScriptRoot 'test-app-icon.ps1')
+& (Join-Path $PSScriptRoot 'test-package-options.ps1')
 
 if (-not $SkipBuild) {
     dotnet build (Join-Path $root "FOG.Prime.sln") -c Release
@@ -86,6 +88,8 @@ $protocolSource = Get-Content (Join-Path $root "FOG.Protocol\AgentProtocol.cs") 
 $agentClientSource = Get-Content (Join-Path $root "FOG.WebView2\AgentClient.cs") -Raw
 $profileCatalogSource = Get-Content (Join-Path $root "FOG.Agent\ProfileCatalog.cs") -Raw
 $integritySource = Get-Content (Join-Path $root "FOG.Agent\RuntimeIntegrityVerifier.cs") -Raw
+$verifiedRuntimeLeaseSource = Get-Content (Join-Path $root "FOG.Agent\VerifiedRuntimeLease.cs") -Raw
+$fileReadLeaseSource = Get-Content (Join-Path $root "FOG.Protocol\FileReadLease.cs") -Raw
 $agentProjectSource = Get-Content (Join-Path $root "FOG.Agent\FOG.Agent.csproj") -Raw
 $uiProjectSource = Get-Content (Join-Path $root "FOG.WebView2\FOG.WebView2.csproj") -Raw
 $packageSource = Get-Content (Join-Path $root "build\package.ps1") -Raw
@@ -111,8 +115,32 @@ if ($profileCatalogSource -notmatch 'TrustedProfiles\.json' -or
     throw "Embedded profile trust validation is missing."
 }
 if ($integritySource -notmatch 'TrustedRuntimeManifest\.json' -or
-    $integritySource -notmatch 'Path\.GetRelativePath') {
-    throw "Embedded runtime trust validation is missing."
+    $integritySource -notmatch 'GetManifestResourceStream\(TrustedManifestResource\)' -or
+    $integritySource -notmatch 'trustedBytes\s*=\s*await ReadTrustedManifestAsync\(cancellationToken\)' -or
+    $integritySource -notmatch '_lease\s*=\s*await VerifiedRuntimeLease\.AcquireAsync\(runtimeRoot, manifestPath, trustedBytes, cancellationToken\)' -or
+    $integritySource -notmatch '_lease\?\.Dispose\(\)') {
+    throw "Embedded runtime trust delegation and retained verification lease are missing."
+}
+if ($verifiedRuntimeLeaseSource -notmatch '(?s)lease\._files\s*=\s*FileReadLease\.LockDirectories\(runtimeRoot, Path\.GetDirectoryName\(manifestPath\)!\).*manifestStream\s*=\s*lease\._files\.OpenRead\(manifestPath\)' -or
+    $verifiedRuntimeLeaseSource -notmatch 'SHA256\.HashDataAsync\(manifestStream, cancellationToken\)' -or
+    $verifiedRuntimeLeaseSource -notmatch 'FixedTimeEquals\(SHA256\.HashData\(trustedBytes\), actualManifestHash\)' -or
+    $verifiedRuntimeLeaseSource -notmatch '(?s)JsonSerializer\.Deserialize<RuntimeManifest>\(\s*Encoding\.UTF8\.GetString\(trustedBytes\)' -or
+    $verifiedRuntimeLeaseSource -notmatch 'entry\.Key\s*!=\s*Path\.GetFileName\(entry\.Key\)' -or
+    $verifiedRuntimeLeaseSource -notmatch '(?s)stream\s*=\s*lease\._files\.OpenRead\(Path\.Combine\(runtimeRoot, entry\.Key\)\).*SHA256\.HashDataAsync\(stream, cancellationToken\).*actual\.Equals\(entry\.Value, StringComparison\.OrdinalIgnoreCase\)' -or
+    $verifiedRuntimeLeaseSource -notmatch 'Interlocked\.Exchange\(ref _files, null\)\?\.Dispose\(\)') {
+    throw "Locked manifest and runtime file hash verification is incomplete."
+}
+if ($fileReadLeaseSource -notmatch 'paths\.SelectMany\(Ancestors\).*OrderBy\(path => path\.Length\)' -or
+    $fileReadLeaseSource -notmatch 'directory\s*=\s*directory\.Parent' -or
+    $fileReadLeaseSource -notmatch 'CreateFileW\(path, 0, FileShare\.Read\s*\|\s*FileShare\.Write, IntPtr\.Zero' -or
+    $fileReadLeaseSource -notmatch 'new FileStream\(path, FileMode\.Open, FileAccess\.Read, FileShare\.Read, 65536' -or
+    $fileReadLeaseSource -match 'FileShare\.Delete' -or
+    $fileReadLeaseSource -notmatch '_handles!\.Add\(handle\)' -or
+    $fileReadLeaseSource -notmatch '_handles!\.Add\(stream\)' -or
+    $fileReadLeaseSource -notmatch 'RejectReparsePoint\(path\)' -or
+    $fileReadLeaseSource -notmatch 'FileAttributes\.ReparsePoint' -or
+    $fileReadLeaseSource -notmatch 'handles\[index\]\.Dispose\(\)') {
+    throw "Runtime file sharing, ancestor locks and reparse-point protection are incomplete."
 }
 if ($agentProjectSource -notmatch 'FogRuntimeManifestPath' -or
     $agentProjectSource -notmatch 'FogProfilesPath' -or
@@ -202,31 +230,35 @@ if (($workflowSources -join "`n") -match '(?m)^\s*- uses:\s+[^#\r\n]+@v\d+' -or
 }
 
 if ($PackageDirectory) {
+    & (Join-Path $PSScriptRoot 'test-package-layout.ps1') -PackageDirectory $PackageDirectory
     $package = (Resolve-Path $PackageDirectory).Path
     $required = @(
         "FOG Prime.exe",
-        "FOG.Agent.exe",
-        "profiles.json",
-        "runtime.manifest.json",
-        "runtime\FOG.Engine.exe",
-        "runtime\WinDivert.dll",
-        "runtime\WinDivert64.sys",
-        "runtime\voice_decoy_quic.bin",
-        "runtime\ACTIVE_GAME_UDP.bin",
-        "runtime\tls_clienthello_www_sferum_ru.bin",
-        "runtime\game-ipset.txt",
-        "runtime\game-exclude.txt",
-        "game-filter-provenance.json",
+        "app/FOG.Agent.exe",
+        "app/profiles.json",
+        "app/runtime.manifest.json",
+        "app/runtime/FOG.Engine.exe",
+        "app/runtime/WinDivert.dll",
+        "app/runtime/WinDivert64.sys",
+        "app/runtime/voice_decoy_quic.bin",
+        "app/runtime/ACTIVE_GAME_UDP.bin",
+        "app/runtime/tls_clienthello_www_sferum_ru.bin",
+        "app/runtime/game-ipset.txt",
+        "app/runtime/game-exclude.txt",
+        "app/game-filter-provenance.json",
+        "app/payload-provenance.json",
+        "app/build-info.json",
         "THIRD_PARTY_NOTICES.md",
-        "UPSTREAM.md"
+        "notices/UPSTREAM.md"
     )
 
     foreach ($relative in $required) {
         if (-not (Test-Path (Join-Path $package $relative))) { throw "Package file is missing: $relative" }
     }
 
-    $manifest = Get-Content (Join-Path $package "runtime.manifest.json") -Raw | ConvertFrom-Json
-    $runtime = Join-Path $package "runtime"
+    & (Join-Path $PSScriptRoot 'test-app-icon.ps1') -ExecutablePath (Join-Path $package 'FOG Prime.exe')
+    $manifest = Get-Content (Join-Path $package "app/runtime.manifest.json") -Raw | ConvertFrom-Json
+    $runtime = Join-Path $package "app/runtime"
     foreach ($entry in $manifest.sha256.PSObject.Properties) {
         $path = Join-Path $runtime $entry.Name
         if (-not (Test-Path $path)) { throw "Manifest file is missing: $($entry.Name)" }

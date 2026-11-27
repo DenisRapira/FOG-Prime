@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -9,10 +10,21 @@ public sealed class UpdateChecker : IDisposable
 {
     private static readonly Uri LatestReleaseEndpoint = new(
         "https://api.github.com/repos/DenisRapira/FOG-Prime/releases/latest");
-    private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(6) };
+    private const int MaximumResponseBytes = 128 * 1024;
+    private readonly HttpClient _httpClient;
+
+    public UpdateChecker() : this(new HttpClientHandler { AllowAutoRedirect = false }) { }
+
+    internal UpdateChecker(HttpMessageHandler handler)
+    {
+        _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(6) };
+    }
 
     public async Task<ReleaseUpdate?> CheckAsync(string currentVersion, CancellationToken cancellationToken)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(6));
+        cancellationToken = deadline.Token;
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseEndpoint);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         request.Headers.UserAgent.ParseAdd("FOG-Prime-Update-Check");
@@ -23,15 +35,26 @@ public sealed class UpdateChecker : IDisposable
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken);
         response.EnsureSuccessStatusCode();
+        if (response.Content.Headers.ContentLength > MaximumResponseBytes)
+            throw new InvalidDataException("Release response is too large.");
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        var release = await JsonSerializer.DeserializeAsync<GitHubRelease>(
-            stream,
-            new JsonSerializerOptions(JsonSerializerDefaults.Web),
-            cancellationToken);
+        using var body = new MemoryStream();
+        var buffer = new byte[8192];
+        int count;
+        while ((count = await stream.ReadAsync(buffer, cancellationToken)) != 0)
+        {
+            if (body.Length + count > MaximumResponseBytes)
+                throw new InvalidDataException("Release response is too large.");
+            body.Write(buffer, 0, count);
+        }
+        var release = JsonSerializer.Deserialize<GitHubRelease>(
+            body.GetBuffer().AsSpan(0, checked((int)body.Length)),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
         if (release is null ||
             release.Draft ||
             release.Prerelease ||
+            string.IsNullOrWhiteSpace(release.TagName) ||
             !IsNewerVersion(release.TagName, currentVersion) ||
             !Uri.TryCreate(release.HtmlUrl, UriKind.Absolute, out var releaseUri) ||
             !IsTrustedReleaseUri(releaseUri))
@@ -52,6 +75,7 @@ public sealed class UpdateChecker : IDisposable
     public static bool IsTrustedReleaseUri(Uri uri)
     {
         return uri.Scheme == Uri.UriSchemeHttps &&
+            uri.IsDefaultPort && string.IsNullOrEmpty(uri.UserInfo) &&
             uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) &&
             uri.AbsolutePath.StartsWith(
                 "/DenisRapira/FOG-Prime/releases/",

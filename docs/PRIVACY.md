@@ -1,18 +1,21 @@
 # Privacy
 
-FOG Prime is designed to operate locally.
+This describes the reviewed 2.0.3 candidate sources, not an independent audit of the published 2.0.2 binary. FOG Prime operates locally but is not offline software. No built-in analytics uploader was identified in the reviewed UI/Agent code; this is not a guarantee about all native dependencies or third-party privacy practices. The full native-code audit is incomplete.
 
 - It does not require a FOG-operated account or remote control server.
-- It does not intentionally collect analytics, identifiers, browsing history, message content, or Discord credentials.
-- Health checks contact public Discord and YouTube endpoints.
-- Optional desktop connection evidence reads up to 64 KiB of the local stable
-  Discord renderer log. Only recent Gateway/voice connection states are used;
-  raw log contents are not copied to FOG diagnostics or sent to a server.
+- Probes do not use Discord credentials, authenticate to a Discord account, or record microphone/audio content. Local network identifiers are processed for tunnel detection and profile memory as described below.
+- Health checks resolve `discord.com`/`youtube.com` through the system DNS resolver and request `https://discord.com/api/v10/gateway`, `https://cdn.discordapp.com/embed/avatars/0.png`, `https://www.youtube.com/generate_204`, and `wss://gateway.discord.gg:443/?v=10&encoding=json`. The Gateway connection sends a synthetic heartbeat without account authentication. HTTPS probe requests use `FOG-Prime-Agent/1.0` as User-Agent. These checks do not test audible voice or end-to-end QUIC media.
+- When available, desktop connection evidence automatically reads up to the last 64 KiB of `%APPDATA%\discord\logs\renderer_js.log`. It is not gated by the manual game filter or a separate consent toggle. The tail is read as text in memory, then parsed for recent Gateway/RTC connection states, generally within 120 seconds and the current profile observation window. Raw lines are not deliberately copied into FOG diagnostics or uploaded; derived success/failure/idle states can enter local snapshots and logs. It is not a message-history parser, but the read buffer can contain other renderer-log text.
 - The UI checks GitHub's public Releases API for a newer FOG Prime version and
-  opens the official release page only after the user chooses to download it.
+  opens the official release page only after the user chooses to download it. The automatic request goes to `https://api.github.com/repos/DenisRapira/FOG-Prime/releases/latest`, with User-Agent `FOG-Prime-Update-Check` and GitHub API headers; no account token is supplied by this checker. The checker does not download or install updates itself. It is separate from connectivity probes, so outbound requests are not limited to probe endpoints. `FOG_PRIME_NO_AUTOSTART=1` suppresses automatic connection startup, not a promise to disable update checks or all networking.
 - The latest Agent state is stored locally in `%LOCALAPPDATA%\FOG Prime\state.json`.
 - Bounded diagnostics for the current and previous launch are stored locally in
-  `%LOCALAPPDATA%\FOG Prime\logs`; session tokens are not written to these files.
+  `%LOCALAPPDATA%\FOG Prime\logs` as `fog-prime.log` and `fog-prime.previous.log`. The current log is reset after reaching roughly 1 MiB before a subsequent write; it is not a strict per-entry cap or guaranteed retention period. UI output captures Agent stdout/stderr. Entries can contain timestamps, app/OS versions, process IDs, executable paths, adapter/tunnel names, domains, probe results and exception details. Network/IP information can appear in diagnostics; there is no general personal-data redaction layer. Session tokens are not intentionally logged, but do not treat logs as safe for public posting.
+- `%LOCALAPPDATA%\FOG Prime\preferred-profile.json` stores local profile choices keyed by a SHA-256-derived network/context identity. Inputs include active adapter IDs/types, local IP addresses, gateways and DNS servers, plus profile/filter/catalog context. Hashing is not anonymization. `game-filter.json` stores the manual boolean setting; `engine-session.json` stores local Engine ownership/session metadata. These are not remote analytics.
+- `%LOCALAPPDATA%\FOG Prime\WebView2Profile` holds browser-runtime profile/cache data. Local state/profile files are not all covered by the diagnostic log size limit or rotation.
+- Remote services, DNS resolvers and network providers can observe ordinary connection metadata, including the source IP visible on the selected route, request timing and the requested host/resource. There is no anonymity guarantee. Clicking the update link opens the system browser and uses that browser's own privacy settings.
 - Windows, WebView2, Discord, GitHub, antivirus products, and network providers have their own independent privacy practices.
 
 Do not attach unredacted state files, logs, screenshots, private domains, IP addresses, or tokens to public issues.
+
+Closing FOG does not erase these files. Removing the portable package directory also leaves application data behind. After closing all FOG instances and their WebView2 processes, remove `%LOCALAPPDATA%\FOG Prime` only when you intend to erase local settings/diagnostics for this Windows user; installations share that folder. FOG does not provide a guarantee of secure erasure. Do not upload binaries or raw Discord logs to scanning/support services without explicit authorization.

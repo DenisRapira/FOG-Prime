@@ -2,13 +2,14 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\fog-prime.ico</ApplicationIcon>
     <AssemblyName>FOG Prime</AssemblyName>
-    <Version>2.0.2</Version>
+    <Version>2.0.3</Version>
     <AllowedReferenceRelatedFileExtensions></AllowedReferenceRelatedFileExtensions>
   </PropertyGroup>
 
@@ -17,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="Assets\fog-prime.ico" />
     <EmbeddedResource Include="wwwroot\index.html" />
     <EmbeddedResource Include="$(FogAgentHashPath)" LogicalName="FOG.WebView2.TrustedAgent.sha256" Condition="'$(FogAgentHashPath)' != ''" />
   </ItemGroup>

@@ -67,6 +67,10 @@ public sealed class AgentPipeServer(
             {
                 // The Agent is shutting down.
             }
+            catch (OperationCanceledException)
+            {
+                logger.LogDebug("Named pipe client exceeded its I/O deadline");
+            }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Named pipe request failed");
@@ -81,14 +85,14 @@ public sealed class AgentPipeServer(
     private async Task HandleConnectionAsync(NamedPipeServerStream pipe, CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
-        var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true) { AutoFlush = true };
-        var line = await ReadLimitedLineAsync(reader, 4096, cancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+        using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        readDeadline.CancelAfter(TimeSpan.FromSeconds(5));
+        var line = await ReadLimitedLineAsync(reader, 4096, readDeadline.Token);
         var request = line is null
             ? null
             : JsonSerializer.Deserialize<AgentRequest>(line, Json);
 
-        var response = request is null || !IsAuthorized(request.SessionToken)
+        var response = request is null || string.IsNullOrWhiteSpace(request.Command) || !IsAuthorized(request.SessionToken)
             ? new AgentResponse(false, "invalid", "Invalid request.", null)
             : await DispatchAsync(request, cancellationToken);
 
@@ -99,22 +103,19 @@ public sealed class AgentPipeServer(
 
         try
         {
-            await writer.WriteLineAsync(JsonSerializer.Serialize(response, Json));
+            using var writeDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            writeDeadline.CancelAfter(TimeSpan.FromSeconds(5));
+            var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response, Json) + "\n");
+            await pipe.WriteAsync(bytes, writeDeadline.Token);
+            await pipe.FlushAsync(writeDeadline.Token);
         }
         catch (IOException)
         {
             logger.LogDebug("Named pipe client disconnected before receiving a response");
         }
-        finally
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            try
-            {
-                await writer.DisposeAsync();
-            }
-            catch (IOException)
-            {
-                logger.LogDebug("Named pipe writer closed after the client disconnected");
-            }
+            logger.LogDebug("Named pipe client did not read the response before its deadline");
         }
 
         if (response.Ok && string.Equals(request?.Command, "shutdown", StringComparison.OrdinalIgnoreCase))
