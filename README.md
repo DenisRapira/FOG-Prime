@@ -212,16 +212,12 @@ reproducibility is not claimed.
 | :--- | :--- |
 | [Website](https://denisrapira.github.io/FOG-Prime/) | [Architecture](ARCHITECTURE.md) |
 | [Release Notes](docs/RELEASE-2.0.3.md) | [Build Guide](docs/BUILDING.md) |
-| [Changelog](CHANGELOG.md) | [Contributing](CONTRIBUTING.md) |
+| [Changelog](CHANGELOG.md) | [Security Policy](SECURITY.md) |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | [Patch Checklist](docs/PATCH-CHECKLIST.md) |
 | [Privacy Policy](docs/PRIVACY.md) | [Security Review](docs/SECURITY-REVIEW-2.0.3.md) |
 | [Release Status](docs/release-status.json) | [Dependency Sources](docs/DEPENDENCY-SOURCES-2.0.3.md) |
 
-## Contributing & License
-
-Bug reports, reproducible diagnostics with private data removed, documentation
-improvements, and focused pull requests are welcome. Please read
-[Contributing](CONTRIBUTING.md) before opening a PR.
+## License
 
 Original FOG Prime code is **[MIT-licensed](LICENSE)**, copyright (c) 2026
 **DenisRapira**. Engine, WinDivert, Cygwin, and Microsoft components retain their

@@ -14,6 +14,12 @@ Include the affected version, reproduction steps, impact, and any suggested miti
 
 ## Trust model
 
+- Repository changes and releases are maintainer-controlled. External code
+  contributions are not currently accepted. Workflows do not subscribe to
+  pull-request events; source checks run on repository pushes, scheduled scans
+  where configured, or explicit maintainer dispatches. Do not run, merge or
+  approve unreviewed external code, workflows or binary attachments.
+
 - CI scans the fetched Git history for credentials with a checksum-pinned
   Gitleaks version. Findings are redacted; only three exact, reviewed public
   examples are allowlisted. This is a detection aid, not proof that no secret
