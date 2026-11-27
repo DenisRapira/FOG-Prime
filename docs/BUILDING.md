@@ -77,9 +77,12 @@ Integration tests are separate from the 97 scoped harness tests. As of 2026-11-2
 
 **`test-startup-reliability.ps1` is retired.** It now fails before launching/stopping processes because its former shared-pipe setup was obsolete. It is not a current candidate acceptance test and its retirement is not a verification result.
 
-Native builds require Cygwin gcc-core, make, zlib-devel, libintl-devel and
-libiconv-devel. The original v2.0.3 tag workflow failed because libintl-devel
-was missing; the subsequent main-branch fix does not replace published assets.
+Native builds require Cygwin gcc-core, make, zlib-devel,
+libintl-devel=0.22.5-1 and libiconv-devel. The upstream target uses static
+linking; libintl-devel 0.26 no longer supplies libintl.a, whereas the pinned
+0.22.5-1 package does. Setup accepts package=version with signed package-index
+verification still enabled. These build-toolchain corrections do not replace
+published accepted binaries or certify a newly rebuilt artifact.
 
 `test-window-sleep.ps1 -PackageDirectory <package>` tests real WebView2 suspension,
 rapid minimize/restore and clean UI/Agent shutdown with native Engine autostart

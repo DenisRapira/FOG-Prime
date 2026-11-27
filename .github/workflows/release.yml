@@ -23,7 +23,7 @@ jobs:
           platform: x86_64
           site: https://mirrors.kernel.org/sourceware/cygwin/
           check-sig: true
-          packages: gcc-core make zlib-devel libintl-devel libiconv-devel
+          packages: gcc-core make zlib-devel libintl-devel=0.22.5-1 libiconv-devel
 
       - name: Resolve version
         id: version
