@@ -3,8 +3,8 @@
 Public repository description and homepage were updated after the 2.0.3
 publication. Suggested topics below are not automatically applied.
 
-- About: `Windows utility for automatic Discord/YouTube connection profiles,
-  local diagnostics and optional game filtering.`
+- About: `Automatic connection profiles for Discord and YouTube on Windows.
+  Minimal UI, local diagnostics, recovery, and optional game filtering.`
 - Website: `https://denisrapira.github.io/FOG-Prime/`
 - Suggested topics: `windows`, `csharp`, `dotnet`, `webview2`, `networking`,
   `network-diagnostics`, `discord`, `youtube`, `game-filter`.
