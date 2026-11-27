@@ -147,7 +147,9 @@ assert.ok(fs.existsSync(fileURLToPath(new URL(manifest.start_url, pathToFileURL(
             if (url.hostname === 'github.com' && url.pathname.startsWith('/DenisRapira/FOG-Prime/blob/main/')) {
               assert.ok(fs.existsSync(path.join(root, decodeURIComponent(url.pathname.slice('/DenisRapira/FOG-Prime/blob/main/'.length)))));
             }
-            assert.ok(!url.pathname.includes(`/releases/tag/v${status.candidate.version}`));
+            if (status.candidate.status !== 'released') {
+              assert.ok(!url.pathname.includes(`/releases/tag/v${status.candidate.version}`));
+            }
           }
         }
 

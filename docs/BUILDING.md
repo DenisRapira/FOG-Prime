@@ -1,6 +1,6 @@
 # Building FOG Prime
 
-These instructions describe the unpublished 2.0.3/.NET 10 candidate, not the published 2.0.2/.NET 8 archive.
+These instructions describe FOG Prime 2.0.3/.NET 10, not the previous 2.0.2/.NET 8 archive. The published 2.0.3 package retains the user-accepted runtime bytes; see RELEASE-ACCEPTANCE-2.0.3.md for build and release provenance.
 
 ## Prerequisites
 
@@ -77,6 +77,10 @@ Integration tests are separate from the 97 scoped harness tests. As of 2026-11-2
 
 **`test-startup-reliability.ps1` is retired.** It now fails before launching/stopping processes because its former shared-pipe setup was obsolete. It is not a current candidate acceptance test and its retirement is not a verification result.
 
+Native builds require Cygwin gcc-core, make, zlib-devel, libintl-devel and
+libiconv-devel. The original v2.0.3 tag workflow failed because libintl-devel
+was missing; the subsequent main-branch fix does not replace published assets.
+
 `test-window-sleep.ps1 -PackageDirectory <package>` tests real WebView2 suspension,
 rapid minimize/restore and clean UI/Agent shutdown with native Engine autostart
 disabled. Close existing FOG instances first; the script refuses to stop them.
@@ -95,9 +99,9 @@ Review the script before execution. Package-security checks use temporary copies
 
 ## Create a GitHub release
 
-Release publication is a separate maintainer operation after testing, source/license gates and artifact review. The release workflow creates drafts only: a tag does not automatically promote a stable release. Follow [Patch and Release Acceptance](PATCH-CHECKLIST.md), including review of the exact downloadable ZIP/hash and manual promotion after all required gates pass. A signed Git tag is not an Authenticode signature on binaries. Do not push a candidate tag merely to try these instructions. Version 2.0.3 is not public; [release-status.json](release-status.json) records stable/candidate status.
+Release publication is a separate maintainer operation after testing, source/license gates and artifact review. The release workflow creates drafts only: a tag does not automatically promote a stable release. Follow [Patch and Release Acceptance](PATCH-CHECKLIST.md), including review of the exact downloadable ZIP/hash and manual promotion after all required gates pass. A signed Git tag is not an Authenticode signature on binaries. Do not push a candidate tag merely to try these instructions. Version 2.0.3 is published; [release-status.json](release-status.json) records stable/candidate status.
 
-The live API check on 2026-11-27 found only `FOG-Prime-2.0.2-win-x64.zip` (100386176 bytes) on stable v2.0.2, published `2026-11-15T11:47:08Z`. There is no published `.sha256` asset for that release. Workflow checksum generation is not evidence that a checksum was published for an existing release. A full native-code audit remains incomplete; scoped managed tests do not establish native audit coverage.
+Before 2.0.3 publication, the API check found only the ZIP on v2.0.2, without a checksum asset. The current 2.0.3 release includes ZIP, SHA-256 and separate native source archives. The public ZIP was downloaded again and matched daca6de1372939b021814692a6ab713c205bd1f00b8bf176d340626828fd4fad. A full native-code audit remains incomplete; scoped managed tests do not establish native audit coverage.
 
 ## Optional Application Signing
 

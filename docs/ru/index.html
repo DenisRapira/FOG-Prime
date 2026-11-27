@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FOG Prime 2.0.2 - сетевая диагностика Windows</title>
-  <meta name="description" content="FOG Prime для Windows: опубликованная стабильная версия 2.0.2 на .NET 8; локальный кандидат 2.0.3 на .NET 10 не опубликован. Диагностика сети и профили соединения.">
-  <meta name="keywords" content="FOG Prime, диагностика сети Windows, образовательное приложение, профили соединения, WinDivert, .NET 8, WebView2, QUIC, TLS, DNS">
+  <title>FOG Prime 2.0.3 - сетевая диагностика Windows</title>
+  <meta name="description" content="FOG Prime 2.0.3 для Windows: .NET 10, автоматические профили, анимированные этапы подключения и ручной игровой фильтр.">
+  <meta name="keywords" content="FOG Prime, диагностика сети Windows, образовательное приложение, профили соединения, WinDivert, .NET 10, WebView2, QUIC, TLS, DNS">
   <meta name="author" content="DenisRapira">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
   <meta name="theme-color" content="#000000">
@@ -17,14 +17,14 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="FOG Prime">
   <meta property="og:locale" content="ru_RU">
-  <meta property="og:title" content="FOG Prime 2.0.2 - диагностика соединения Windows">
-  <meta property="og:description" content="Стабильная 2.0.2: .NET 8. Локальный кандидат 2.0.3: .NET 10, не опубликован. Диагностика соединения Windows.">
+  <meta property="og:title" content="FOG Prime 2.0.3 - диагностика соединения Windows">
+  <meta property="og:description" content="FOG Prime 2.0.3 доступен для Windows x64; .NET 10 включён в сборку. Диагностика соединения Windows.">
   <meta property="og:url" content="https://denisrapira.github.io/FOG-Prime/ru/">
   <meta property="og:image" content="https://denisrapira.github.io/FOG-Prime/assets/fog-prime-social-preview.png">
   <meta property="og:image:alt" content="Интерфейс FOG Prime для диагностики соединения Windows">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="FOG Prime 2.0.2 - диагностика соединения Windows">
-  <meta name="twitter:description" content="Стабильная 2.0.2: .NET 8. Локальный кандидат 2.0.3: .NET 10, не опубликован.">
+  <meta name="twitter:title" content="FOG Prime 2.0.3 - диагностика соединения Windows">
+  <meta name="twitter:description" content="FOG Prime 2.0.3 доступен для Windows x64; .NET 10 включён в сборку.">
   <meta name="twitter:image" content="https://denisrapira.github.io/FOG-Prime/assets/fog-prime-social-preview.png">
   <script type="application/ld+json">
   {
@@ -33,11 +33,11 @@
     "name": "FOG Prime",
     "applicationCategory": "NetworkApplication",
     "operatingSystem": "Windows 10, Windows 11",
-    "softwareVersion": "2.0.2",
-    "softwareRequirements": "Windows x64, .NET 8, Microsoft Edge WebView2 Runtime",
-    "description": "Опубликованная стабильная 2.0.2: .NET 8. Локальный кандидат 2.0.3: .NET 10, не опубликован. Голос, исправление NAT и совместимость игр не гарантируются.",
+    "softwareVersion": "2.0.3",
+    "softwareRequirements": "Windows x64, .NET 10, Microsoft Edge WebView2 Runtime",
+    "description": "Опубликованная стабильная 2.0.3: .NET 10. Голос, исправление NAT и совместимость игр не гарантируются.",
     "url": "https://denisrapira.github.io/FOG-Prime/ru/",
-    "downloadUrl": "https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.2",
+    "downloadUrl": "https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.3",
     "license": "https://github.com/DenisRapira/FOG-Prime/blob/main/LICENSE",
     "codeRepository": "https://github.com/DenisRapira/FOG-Prime",
     "image": "https://denisrapira.github.io/FOG-Prime/assets/fog-prime-social-preview.png",
@@ -77,13 +77,13 @@
 </head>
 <body>
   <a class="skip-link" href="#top">Перейти к содержимому</a>
-  <nav class="nav" aria-label="Основная навигация"><a class="brand" href="#top">FOG <span>PRIME</span></a><div class="nav-links"><a href="#features">Возможности</a><a href="#requirements">Требования</a><a href="../index.html" lang="en" hreflang="en">English</a><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.2">Скачать</a></div></nav>
+  <nav class="nav" aria-label="Основная навигация"><a class="brand" href="#top">FOG <span>PRIME</span></a><div class="nav-links"><a href="#features">Возможности</a><a href="#requirements">Требования</a><a href="../index.html" lang="en" hreflang="en">English</a><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.3">Скачать</a></div></nav>
   <main id="top" tabindex="-1">
-    <section class="hero"><div class="hero-content"><p class="eyebrow">Открытый исходный код / Windows 10 и 11</p><h1>FOG Prime 2.0</h1><p class="lead">Диагностика соединения и встроенные сетевые профили на вашем компьютере Windows.</p><p class="release-note">Опубликованная стабильная версия: <strong data-stable-version="2.0.2">2.0.2</strong> (.NET 8, исходный опубликованный бинарник). Локальный кандидат: <strong data-candidate-version="2.0.3">2.0.3</strong> (.NET 10), не опубликован и недоступен для публичного скачивания.</p><div class="actions"><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.2">Скачать 2.0.2 для Windows x64</a><a class="secondary" href="https://github.com/DenisRapira/FOG-Prime">Исходный код на GitHub</a></div></div></section>
+    <section class="hero"><div class="hero-content"><p class="eyebrow">Открытый исходный код / Windows 10 и 11</p><h1>FOG Prime 2.0</h1><p class="lead">Диагностика соединения и встроенные сетевые профили на вашем компьютере Windows.</p><p class="release-note">Стабильная версия: <strong data-stable-version="2.0.3" data-candidate-version="2.0.3">2.0.3</strong> (.NET 10 включён). ZIP и SHA-256 доступны на GitHub.</p><div class="actions"><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.3">Скачать 2.0.3 для Windows x64</a><a class="secondary" href="https://github.com/DenisRapira/FOG-Prime">Исходный код на GitHub</a></div></div></section>
     <section id="features" class="band"><div class="inner"><div class="status">Диагностика соединения Windows</div><h2>Один понятный сценарий</h2><p class="intro">FOG Prime проверяет систему, выбирает встроенный профиль соединения и опрашивает настроенные конечные точки. Эти проверки не доказывают работу голоса Discord, воспроизведения YouTube или совместимость игр. Нужны живые тесты у вашего провайдера; работа голоса и исправление NAT не гарантируются.</p><div class="feature-grid"><div class="feature"><b>Диагностика соединения</b><p>Проверка настроенных HTTPS-адресов и обмена HELLO + heartbeat ACK с Discord WebSocket Gateway. Свежие локальные журналы Discord, если доступны, дают сведения о сессии настольного клиента. DNS разрешается в рамках запросов; отдельной проверки QUIC или слышимости голоса нет.</p></div><div class="feature"><b>Проверки локальной среды</b><p>Аутентификация команд UI → Agent и сверка runtime-файлов с SHA-256-манифестом. Целостность не подтверждает совместимость или безопасность.</p></div><div class="feature"><b>Автовосстановление</b><p>Контроль Engine, повторное использование здоровой сессии и восстановление после сбоя.</p></div></div></div></section>
     <section class="band"><div class="inner"><h2>Три этапа без ручной настройки</h2><div class="steps"><div class="step"><strong>Проверка системы</strong><p>Контроль служб Windows, целостности runtime и базовой готовности сети.</p></div><div class="step"><strong>Настройка соединения</strong><p>Выбор одного из встроенных профилей и запуск нативного Engine.</p></div><div class="step"><strong>Проверка доступа</strong><p>Стабильные health-checks и итоговый статус настроенных конечных точек.</p></div></div></div></section>
-    <section id="requirements" class="band"><div class="inner"><h2>Системные требования</h2><table class="requirements"><tr><th scope="row">Операционная система</th><td>Windows 10 или Windows 11 x64</td></tr><tr><th scope="row">Платформа</th><td>Стабильная 2.0.2: .NET 8; неопубликованный кандидат 2.0.3: .NET 10</td></tr><tr><th scope="row">Интерфейс</th><td>Microsoft Edge WebView2 Runtime</td></tr><tr><th scope="row">Права</th><td>Доступ администратора для сетевого драйвера WinDivert</td></tr><tr><th scope="row">Компонент Windows</th><td>Работающая служба Base Filtering Engine</td></tr><tr><th scope="row">Приватность</th><td>Нет обязательного удалённого backend и встроенной телеметрии</td></tr></table></div></section>
-    <section class="final"><h2>Скачайте опубликованную сборку</h2><p>Используйте только страницу Releases этого репозитория. Исходный код, сборка, проверки целостности и политика безопасности открыты.</p><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.2">Открыть стабильный релиз 2.0.2</a></section>
+    <section id="requirements" class="band"><div class="inner"><h2>Системные требования</h2><table class="requirements"><tr><th scope="row">Операционная система</th><td>Windows 10 или Windows 11 x64</td></tr><tr><th scope="row">Платформа</th><td>.NET 10 (включён в ZIP для Windows x64)</td></tr><tr><th scope="row">Интерфейс</th><td>Microsoft Edge WebView2 Runtime</td></tr><tr><th scope="row">Права</th><td>Доступ администратора для сетевого драйвера WinDivert</td></tr><tr><th scope="row">Компонент Windows</th><td>Работающая служба Base Filtering Engine</td></tr><tr><th scope="row">Приватность</th><td>Нет обязательного удалённого backend и встроенной телеметрии</td></tr></table></div></section>
+    <section class="final"><h2>Скачайте опубликованную сборку</h2><p>Используйте только страницу Releases этого репозитория. Исходный код, сборка, проверки целостности и политика безопасности открыты.</p><a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.3">Открыть стабильный релиз 2.0.3</a></section>
   </main>
   <footer><span>Собственный код FOG Prime: MIT. У зависимостей отдельные лицензии. <a href="https://github.com/DenisRapira/FOG-Prime/blob/main/THIRD_PARTY_NOTICES.md">Уведомления о сторонних компонентах</a></span><span><a href="https://github.com/DenisRapira/FOG-Prime/blob/main/SECURITY.md">Безопасность</a> · <a href="https://github.com/DenisRapira/FOG-Prime/blob/main/docs/PRIVACY.md">Приватность</a> · <a href="https://github.com/DenisRapira/FOG-Prime/issues">Поддержка</a></span></footer>
 </body>

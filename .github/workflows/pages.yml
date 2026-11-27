@@ -43,8 +43,14 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
       - name: Archive website
-        shell: bash
-        run: tar --dereference --hard-dereference --directory docs -cvf "$RUNNER_TEMP/artifact.tar" --exclude=.git --exclude=.github .
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (Get-ChildItem -LiteralPath docs -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) {
+            throw 'Website archive must not contain links.'
+          }
+          & "$env:SystemRoot/System32/tar.exe" -cf "$env:RUNNER_TEMP/artifact.tar" -C docs .
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows website archive creation failed.' }
       - name: Upload website
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

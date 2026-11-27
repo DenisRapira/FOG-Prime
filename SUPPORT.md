@@ -4,7 +4,7 @@ Use [GitHub Issues](https://github.com/DenisRapira/FOG-Prime/issues) for reprodu
 
 Before opening an issue:
 
-1. Identify the version and source: published stable 2.0.2/.NET 8 or unpublished candidate 2.0.3/.NET 10. Use the [official Releases page](https://github.com/DenisRapira/FOG-Prime/releases/latest) for downloads.
+1. Identify the version and source: current stable 2.0.3/.NET 10 or a previous release such as 2.0.2/.NET 8. Use the [official Releases page](https://github.com/DenisRapira/FOG-Prime/releases/latest) for downloads.
 2. Close and reopen FOG Prime; record whether the problem concerns startup, probes or an actual application session.
 3. Confirm WebView2 Runtime and Base Filtering Engine (`BFE`) are available; record any active VPN and the manual game-filter setting.
 4. Remove secrets and personal network information from screenshots and logs.

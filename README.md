@@ -3,7 +3,7 @@
 
   # FOG Prime
 
-  **Educational Windows network diagnostics with a local Agent/Engine architecture. Published 2.0.2: .NET 8; unpublished 2.0.3 candidate: .NET 10.**
+  **Windows network diagnostics with automatic connection profiles. FOG Prime 2.0.3 is available for Windows x64 with .NET 10 included.**
 
   [![CI](https://github.com/DenisRapira/FOG-Prime/actions/workflows/ci.yml/badge.svg)](https://github.com/DenisRapira/FOG-Prime/actions/workflows/ci.yml)
   [![CodeQL](https://github.com/DenisRapira/FOG-Prime/actions/workflows/codeql.yml/badge.svg)](https://github.com/DenisRapira/FOG-Prime/actions/workflows/codeql.yml)
@@ -24,73 +24,57 @@
 
 ## Download
 
-### 2.0.3 In Development
+### FOG Prime 2.0.3
 
-This working tree targets .NET 10 (`global.json` selects SDK 10.0.404). It is not the published 2.0.2/.NET 8 package. The .NET 10 badge and source build instructions describe the candidate, not the stable download. Canonical status is in [release-status.json](docs/release-status.json). GitHub's live API was verified on 2026-11-27: stable v2.0.2 was published at `2026-11-15T11:47:08Z`, with only `FOG-Prime-2.0.2-win-x64.zip` (100386176 bytes); no `.sha256` asset is published.
+**[Скачать v2.0.3 для Windows x64](https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.3)** ·
+[Что изменилось](docs/RELEASE-2.0.3.ru.md) ·
+[Предыдущая v2.0.2](https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.2)
 
-Готовится локальная тестовая сборка с общим каталогом игр **ROB RUN и Warframe**.
-Каталог работает внутри приложения; в окне остаётся только переключатель фильтра.
-Добавлены снижение фоновых опросов, реакция на события сети и отдельная память
-рабочих профилей для разных сетей. Автозапуска при открытии Discord или игры нет.
+Версия **2.0.3** опубликована. В релизе:
+
+- реальные этапы подключения с анимацией и спокойным состоянием после успеха;
+- меньше фоновых опросов, приостановка интерфейса при сворачивании;
+- отмена устаревших проверок при смене сети и память профилей для разных сетей;
+- ручной игровой фильтр, без списка игр и технических настроек в окне;
+- иконка основного EXE; Agent и Engine находятся в папке `app/`;
+- усиленная проверка целостности, защита IPC и безопасные ссылки обновлений.
+
+Подключение к **Discord и YouTube** запускается автоматически. При длительном
+сбое доступна кнопка «Повторить». Закрытие окна останавливает процессы FOG;
+сворачивание оставляет подключение работающим. Автозапуска FOG при открытии
+Discord или игры нет. Обновления предлагаются через официальную страницу
+GitHub, без скрытой установки.
+
+Пользовательский ZIP: `FOG-Prime-2.0.3-win-x64.zip` (96 579 182 байта).
+Рядом опубликован `FOG-Prime-2.0.3-win-x64.sha256`.
+SHA-256: `daca6de1372939b021814692a6ab713c205bd1f00b8bf176d340626828fd4fad`.
+Архивы Cygwin/WinDivert с `src`/`source` в названии содержат исходники
+зависимостей и не нужны для запуска. Обычному пользователю нужен только ZIP FOG.
+Сборка включает .NET 10; WebView2 требуется отдельно.
+
+### Игровой фильтр
+
+Один ручной переключатель **«Игровой фильтр»**. Внутренний каталог включает
+ROB RUN и Warframe; список игр в окне не отображается. По умолчанию фильтр
+выключен, выбор сохраняется. Переключение переподключает FOG, не игру.
+Дополнительные TCP/UDP-правила действуют на адреса из закреплённого IP-списка,
+с исключением локальных сетей и приоритетом Discord/YouTube. Это фильтрация
+адресов, не процессов: другие приложения на тех же сетях тоже могут затрагиваться.
+Добавление игры не гарантирует устранения лагов, NAT, чата или всех её серверов.
+Telegram и Steam не входят в целевые сервисы этой версии.
 Результаты и ограничения: [оптимизация 2.0.3](docs/OPTIMIZATION-2.0.3.md).
-Фильтр остаётся добровольным; без него сохраняются прежние правила.
-Добавление игры не гарантирует исправление лагов, NAT, чата или всех её серверов.
-Стабильная опубликованная версия пока **2.0.2**.
-[Изменения кандидата 2.0.3](docs/RELEASE-2.0.3.md).
 
-### FOG Prime 2.0.2
+### Запуск
 
-Новая версия для автоматической настройки доступа к **Discord и YouTube**:
+1. Скачайте `FOG-Prime-2.0.3-win-x64.zip` с официальной страницы Releases.
+2. Закройте старый FOG и распакуйте архив в новую отдельную папку.
+3. Запустите `FOG Prime.exe` и подтвердите запрос Windows.
+4. Сохраняйте папки `app/` и `notices/` рядом с основным EXE.
 
-В v2.0.2 приложение запускает подключение автоматически и показывает один
-понятный статус без выбора профилей и технических этапов. При кратком сбое
-проверки продолжаются в фоне; при длительном сбое доступна кнопка «Повторить».
-Закрытие окна останавливает процессы FOG. Обновления предлагаются через
-официальную страницу GitHub, без скрытой установки.
-
-Сохранены существующие списки адресов: `robrun.com`, `kefirgames.com`,
-`robrun.wiki`, `robrun.site`, `robrun.org`, `epicgames.com`, `epicgames.dev`,
-`easyanticheat.net`. Рабочий движок и правила Discord/YouTube сохранены из v2.0.1.
-Экспериментальный FOG Native в этот релиз не входит. Добавление доменов не
-гарантирует работу авторизации, голоса или игровых чатов.
-
-### Игровой фильтр кандидата 2.0.3
-
-В интерфейсе есть ручной переключатель **«Игровой фильтр»**, целевые игры -
-**ROB RUN и Warframe** в общем встроенном каталоге. По умолчанию фильтр выключен; выбор сохраняется между запусками.
-Переключение переподключает только FOG, не перезапускает игру.
-При включении используются дополнительные TCP/UDP-правила из 1.10.4 для портов
-1024-65535 по закреплённому IP-списку, с исключением локальных сетей и приоритетом
-Discord/YouTube. Это фильтр адресов, не процессов: он может затрагивать другие
-приложения на тех же CDN/хостинговых сетях. При здоровом внешнем VPN FOG сохраняет
-прямой режим, не вмешиваясь в туннель; выбор фильтра применяется при работе Engine.
-ROB RUN добавлен как целевая игра для проверки, не как гарантия устранения лагов.
-
-- автоматический перебор с возвратом к лучшему найденному профилю;
-- отдельный учёт ошибок голосового соединения Discord;
-- быстрый повторный запуск с запоминанием проверенного профиля;
-- первая проверка сразу после запуска движка, без ожидания фонового таймера;
-- обновлённый интерфейс с анимацией соединения и восстановлением WebView2;
-- предупреждение о VPN без его принудительного отключения.
-
-**[Скачать v2.0.2](https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.2)** ·
-[Что изменилось](docs/RELEASE-2.0.2.md) ·
-[Предыдущая v2.0.1](https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.1)
-
-Результат зависит от сети. Проверки доступности не гарантируют слышимость голоса,
-воспроизведение видео или совместимость с каждым античитом. Telegram и Steam
-не входят в целевые сервисы этой версии.
-
-Download the current Windows x64 package from **[GitHub Releases](https://github.com/DenisRapira/FOG-Prime/releases/latest)**.
-
-1. Download `FOG-Prime-<version>-win-x64.zip` or the current Windows x64 archive.
-2. Extract the complete archive to a dedicated folder.
-3. Run `FOG Prime.exe` and accept the Windows elevation prompt.
-4. Keep the FOG Prime window open while the connection profile is needed.
-
-Only use packages published under this repository's Releases page. Do not run individual backend files (`app/runtime/` in the candidate) or download builds from comments, direct messages, or third-party mirrors.
-
-The 2.0.3 candidate root contains only `FOG Prime.exe`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `notices/` and `app/`. Backend executables, runtime, configuration and integrity/provenance JSON live in `app/`; dependency documents remain in `notices/`. The main EXE and window use the bundled FOG icon. Close the old FOG instance before extracting the new candidate into a separate empty folder; do not overlay it onto an older package. Internal reports remain in the repository, not the ZIP. This candidate layout does not change the published 2.0.2 archive.
+В корне только `FOG Prime.exe`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `notices/`
+и `app/`. Отчёты, исходники, скриншоты и превью в пользовательский ZIP не входят.
+Не запускайте backend-файлы из `app/` отдельно и не скачивайте сборки из комментариев,
+личных сообщений или сторонних зеркал. Не распаковывайте поверх старой версии.
 
 ## Key features
 
@@ -99,7 +83,7 @@ The 2.0.3 candidate root contains only `FOG Prime.exe`, `LICENSE`, `THIRD_PARTY_
 - Certificate-validated TLS and Gateway HELLO/heartbeat checks.
 - DNS diagnostics without forcing a permanent system DNS change.
 - .NET Windows Agent with native Engine supervision and automatic recovery.
-- Authenticated, current-user-only, per-session named-pipe IPC with a fixed command protocol in the candidate.
+- Authenticated, current-user-only, per-session named-pipe IPC with a fixed command protocol in 2.0.3.
 - SHA-256 integrity verification for every packaged runtime file.
 - FOG Engine source and packet sample provenance pinned to recorded revisions.
 - No FOG-operated backend or user account; external probes/update checks and local diagnostics are disclosed in the privacy policy.
@@ -139,7 +123,7 @@ FOG Prime runs locally and does not require a FOG-operated backend. The UI-to-Ag
 
 ## Build from source
 
-The candidate uses .NET 10, C#, WPF/WebView2, C, PowerShell and WinDivert. Use the SDK selected by `global.json`; a matching global SDK is sufficient and no machine-specific SDK directory is required.
+Version 2.0.3 uses .NET 10, C#, WPF/WebView2, C, PowerShell and WinDivert. Use the SDK selected by `global.json`; a matching global SDK is sufficient and no machine-specific SDK directory is required.
 
 ```powershell
 dotnet restore .\FOG.Prime.sln --locked-mode
@@ -153,7 +137,7 @@ Building the native Engine requires Cygwin x64 with `gcc-core`, `make`, and `zli
 
 - **The app requests administrator access:** WinDivert needs elevation to inspect and redirect the selected network traffic.
 - **The UI does not open:** install or repair Microsoft Edge WebView2 Runtime.
-- **A connectivity check still fails:** inspect the diagnostics and Windows Base Filtering Engine (`BFE`), then retry. A detected healthy tunnel can use direct mode; a degraded tunnel may still cause the candidate to start Engine. See the troubleshooting guide before changing VPN settings.
+- **A connectivity check still fails:** inspect the diagnostics and Windows Base Filtering Engine (`BFE`), then retry. A detected healthy tunnel can use direct mode; a degraded tunnel may still cause FOG to start Engine. See the troubleshooting guide before changing VPN settings.
 - **The package reports an integrity error:** download a fresh archive from Releases and extract all files together.
 - **The connection stops after closing FOG Prime:** this is expected; the portable UI owns the Agent and Engine lifecycle.
 
@@ -175,7 +159,7 @@ The current release targets Windows 10/11 x64 because it depends on WinDivert an
 
 ### Where can I verify the latest version?
 
-Use the [latest GitHub Release](https://github.com/DenisRapira/FOG-Prime/releases/latest) and [release status](docs/release-status.json). The verified v2.0.2 release has no published checksum asset. A locally computed SHA-256 is useful for identifying a file but cannot authenticate it without an independently trusted expected value. Compare changes in [CHANGELOG.md](CHANGELOG.md).
+Use the [latest GitHub Release](https://github.com/DenisRapira/FOG-Prime/releases/latest) and [release status](docs/release-status.json). Version 2.0.3 includes a published SHA-256 asset; compare it with the downloaded ZIP. A checksum does not replace Authenticode or an antivirus check. Compare changes in [CHANGELOG.md](CHANGELOG.md).
 
 ## Project documentation
 
@@ -202,4 +186,4 @@ Project website: **[denisrapira.github.io/FOG-Prime](https://denisrapira.github.
 
 ## Verification limits
 
-As of 2026-11-27, the candidate Release build completed with zero warnings/errors and 97/97 scoped tests passed; these are not 97 live-network scenarios. Regression coverage includes serialized Start/Stop intent, cancelled requests and rejection of stale network-probe evidence. These source/build results do not verify a newly packaged ZIP; earlier candidate hashes identify historical artifacts only. A full native-code audit remains incomplete. Disposable-VM driver tests and live VPN transitions have not been run; end-to-end voice/audio, NAT behavior and anti-cheat compatibility remain unverified. Antivirus results are unavailable: Defender was stopped, no VirusTotal API key was available, and uploads were not authorized. No clean-AV, ban-safety, latency or universal compatibility guarantee is made.
+Release verification passed 108/108 scoped managed tests, UI checks at three sizes, package tamper/IPC checks, eight native parameter dry runs and real WebView2 minimize/restore/close checks. The user reported successful local operation and authorized publication; no multi-provider/game/anti-cheat matrix was supplied. The public ZIP was downloaded again and matched its SHA-256. Runtime bytes are retained from the accepted candidate, with original build provenance preserved; see [release acceptance](docs/RELEASE-ACCEPTANCE-2.0.3.md). A full native-code audit and disposable-VM driver tests remain incomplete. No clean-AV, ban-safety, latency or universal compatibility guarantee is made; no VirusTotal samples were uploaded.

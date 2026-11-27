@@ -1,7 +1,7 @@
 {
   "name": "FOG Prime",
   "short_name": "FOG Prime",
-  "description": "Windows network diagnostics. Published stable 2.0.2: .NET 8. Local candidate 2.0.3: .NET 10, not published.",
+  "description": "Windows network diagnostics. Published stable FOG Prime 2.0.3 with .NET 10, animated connection stages and manual Game Filter.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "browser",

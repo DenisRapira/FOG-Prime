@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FOG Prime 2.0.2 - Windows Network Diagnostics</title>
-  <meta name="description" content="FOG Prime for Windows: published stable 2.0.2 uses .NET 8; local candidate 2.0.3 uses .NET 10 and is not published. Network diagnostics and connection profiles.">
-  <meta name="keywords" content="FOG Prime, Windows network diagnostics, educational networking app, WinDivert, .NET 8, WebView2, QUIC, TLS, DNS troubleshooting">
+  <title>FOG Prime 2.0.3 - Windows Network Diagnostics</title>
+  <meta name="description" content="FOG Prime 2.0.3 for Windows: .NET 10, automatic connection profiles, animated connection stages and a manual Game Filter.">
+  <meta name="keywords" content="FOG Prime, Windows network diagnostics, educational networking app, WinDivert, .NET 10, WebView2, QUIC, TLS, DNS troubleshooting">
   <meta name="author" content="DenisRapira">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
   <meta name="theme-color" content="#000000">
@@ -16,16 +16,16 @@
   <link rel="manifest" href="./site.webmanifest">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="FOG Prime">
-  <meta property="og:title" content="FOG Prime 2.0.2 - Windows Connection Diagnostics">
-  <meta property="og:description" content="Published stable 2.0.2: .NET 8. Local candidate 2.0.3: .NET 10, not published. Connection diagnostics for Windows.">
+  <meta property="og:title" content="FOG Prime 2.0.3 - Windows Connection Diagnostics">
+  <meta property="og:description" content="FOG Prime 2.0.3 is available for Windows x64 with .NET 10 included. Connection diagnostics for Windows.">
   <meta property="og:url" content="https://denisrapira.github.io/FOG-Prime/">
   <meta property="og:image" content="https://denisrapira.github.io/FOG-Prime/assets/fog-prime-social-preview.png">
   <meta property="og:image:width" content="1280">
   <meta property="og:image:height" content="640">
   <meta property="og:image:alt" content="FOG Prime Windows network diagnostics interface">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="FOG Prime 2.0.2 - Windows Connection Diagnostics">
-  <meta name="twitter:description" content="Published stable 2.0.2: .NET 8. Local candidate 2.0.3: .NET 10, not published.">
+  <meta name="twitter:title" content="FOG Prime 2.0.3 - Windows Connection Diagnostics">
+  <meta name="twitter:description" content="FOG Prime 2.0.3 is available for Windows x64 with .NET 10 included.">
   <meta name="twitter:image" content="https://denisrapira.github.io/FOG-Prime/assets/fog-prime-social-preview.png">
   <script type="application/ld+json">
   {
@@ -34,11 +34,11 @@
     "name": "FOG Prime",
     "applicationCategory": "NetworkApplication",
     "operatingSystem": "Windows 10, Windows 11",
-    "softwareVersion": "2.0.2",
-    "softwareRequirements": "Windows x64, .NET 8, Microsoft Edge WebView2 Runtime",
-    "description": "Published stable 2.0.2 uses .NET 8. Local candidate 2.0.3 uses .NET 10 and is not published. Network diagnostics and connection profiles; no guarantee of voice, NAT repair or game compatibility.",
+    "softwareVersion": "2.0.3",
+    "softwareRequirements": "Windows x64, .NET 10, Microsoft Edge WebView2 Runtime",
+    "description": "Published stable 2.0.3 uses .NET 10. Network diagnostics and connection profiles; no guarantee of voice, NAT repair or game compatibility.",
     "url": "https://denisrapira.github.io/FOG-Prime/",
-    "downloadUrl": "https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.2",
+    "downloadUrl": "https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.3",
     "softwareHelp": "https://github.com/DenisRapira/FOG-Prime/blob/main/docs/TROUBLESHOOTING.md",
     "license": "https://github.com/DenisRapira/FOG-Prime/blob/main/LICENSE",
     "codeRepository": "https://github.com/DenisRapira/FOG-Prime",
@@ -114,7 +114,7 @@
       <a href="#features">Features</a>
       <a href="#requirements">Requirements</a>
       <a href="./ru/index.html" lang="ru" hreflang="ru">Русский</a>
-      <a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.2">Download</a>
+      <a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.3">Download</a>
     </div>
   </nav>
   <main id="top" tabindex="-1">
@@ -123,9 +123,9 @@
         <p class="eyebrow">Open source / Windows 10 &amp; 11</p>
         <h1>FOG Prime 2.0</h1>
         <p class="lead">Connection diagnostics and bundled network profiles running on your Windows PC.</p>
-        <p class="release-note">Published stable: <strong data-stable-version="2.0.2">2.0.2</strong> (.NET 8, original published binary). Local candidate: <strong data-candidate-version="2.0.3">2.0.3</strong> (.NET 10), not published and not available for public download.</p>
+        <p class="release-note">Published stable: <strong data-stable-version="2.0.3" data-candidate-version="2.0.3">2.0.3</strong> (.NET 10 included). ZIP and SHA-256 are available on GitHub.</p>
         <div class="actions">
-          <a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.2">Download 2.0.2 for Windows x64</a>
+          <a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.3">Download 2.0.3 for Windows x64</a>
           <a class="secondary" href="https://github.com/DenisRapira/FOG-Prime">View source on GitHub</a>
         </div>
       </div>
@@ -157,7 +157,7 @@
         <h2>System requirements</h2>
         <table class="requirements">
           <tr><th scope="row">Operating system</th><td>Windows 10 or Windows 11 x64</td></tr>
-          <tr><th scope="row">Framework</th><td>Stable 2.0.2: .NET 8; unpublished candidate 2.0.3: .NET 10</td></tr>
+          <tr><th scope="row">Framework</th><td>.NET 10 (included in the Windows x64 ZIP)</td></tr>
           <tr><th scope="row">UI runtime</th><td>Microsoft Edge WebView2 Runtime</td></tr>
           <tr><th scope="row">Permissions</th><td>Administrator access for the WinDivert network driver</td></tr>
           <tr><th scope="row">Windows component</th><td>Base Filtering Engine enabled</td></tr>
@@ -168,7 +168,7 @@
     <section class="final">
       <h2>Get the published Windows build</h2>
       <p>Download only from the official GitHub Releases page. Source, build workflows, integrity checks and security policy are public.</p>
-      <a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.2">Open stable 2.0.2 release</a>
+      <a class="download" href="https://github.com/DenisRapira/FOG-Prime/releases/tag/v2.0.3">Open stable 2.0.3 release</a>
     </section>
   </main>
   <footer>
