@@ -43,10 +43,11 @@ const states = [
         document.getElementById('actionButton').textContent = 'Disconnect';
         for (const animation of document.getAnimations()) {
           animation.pause();
-          animation.currentTime = frame * 100;
+          animation.currentTime = 600 + frame * 100;
         }
       }, { status, title, message, frame });
       assert(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), 'Preview must fit its viewport.');
+      assert(await page.locator('.hero').evaluate(node => Number(getComputedStyle(node).opacity) > 0.99), 'Every frame must show the interface, including the static GIF fallback.');
       assert(await page.evaluate(() => [...document.querySelectorAll('h1, .message, .stage-label, .footer, button')]
         .filter(node => node.getClientRects().length)
         .every(node => node.scrollWidth <= node.clientWidth + 1)), 'Preview text must fit.');
